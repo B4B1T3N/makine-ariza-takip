@@ -22,7 +22,7 @@ if hasattr(sys.stdout, "reconfigure"):
 from app import config  # noqa: E402
 from app.db import database as db  # noqa: E402
 from app.services import auth_service, fault_service, machine_service  # noqa: E402
-from app.utils.helpers import SQL_FMT  # noqa: E402
+from app.utils.helpers import now_utc  # noqa: E402
 
 USERS = [
     ("ahmet", "1234", "Ahmet Yılmaz", config.ROLE_OPERATOR),
@@ -72,10 +72,8 @@ RESOLUTION_NOTES = [
 
 
 def reset_database() -> None:
-    db.close_connection()
-    for suffix in ("", "-wal", "-shm"):
-        Path(str(config.db_path()) + suffix).unlink(missing_ok=True)
-    print("Veritabanı sıfırlandı.")
+    db.drop_all()
+    print("Tablolar silindi.")
 
 
 def seed() -> None:
@@ -83,7 +81,7 @@ def seed() -> None:
 
     user_ids: dict[str, int] = {}
     for username, password, full_name, role in USERS:
-        existing = db.query_one("SELECT id FROM users WHERE username = ?", (username,))
+        existing = db.query_one("SELECT id FROM users WHERE username = %s", (username,))
         if existing:
             user_ids[username] = existing["id"]
             continue
@@ -92,7 +90,7 @@ def seed() -> None:
 
     machine_ids: list[int] = []
     for name, serial, location, category, commissioned in MACHINES:
-        existing = db.query_one("SELECT id FROM machines WHERE serial_no = ?", (serial,))
+        existing = db.query_one("SELECT id FROM machines WHERE serial_no = %s", (serial,))
         if existing:
             machine_ids.append(existing["id"])
             continue
@@ -108,7 +106,7 @@ def seed() -> None:
     rng = random.Random(42)
     operators = [user_ids["ahmet"], user_ids["zeynep"]]
     technicians = [user_ids["mehmet"], user_ids["elif"]]
-    now = datetime.now()
+    now = now_utc()
 
     created = 0
     for _ in range(140):
@@ -125,17 +123,14 @@ def seed() -> None:
         )[0]
         reporter = rng.choice(operators)
 
+        # occurred_at doğrudan verilebildiği için sonradan UPDATE gerekmiyor.
         fault_id = fault_service.create_fault(
-            machine_id, title, description, priority, reporter
-        )
-        # Gerçekçi bir tarih dağılımı için zaman damgaları geriye alınır.
-        stamp = created_at.strftime(SQL_FMT)
-        db.execute(
-            "UPDATE faults SET created_at = ?, updated_at = ? WHERE id = ?",
-            (stamp, stamp, fault_id),
+            machine_id, title, description, priority, reporter,
+            occurred_at=created_at,
         )
         db.execute(
-            "UPDATE fault_logs SET created_at = ? WHERE fault_id = ?", (stamp, fault_id)
+            "UPDATE faults SET created_at = %s, updated_at = %s WHERE id = %s",
+            (created_at, created_at, fault_id),
         )
 
         # Kayıtların çoğu ilerletilir; bir kısmı açık bırakılır.
@@ -172,8 +167,8 @@ def seed() -> None:
             fault_id, technician, config.STATUS_RESOLVED, rng.choice(RESOLUTION_NOTES)
         )
         db.execute(
-            "UPDATE faults SET resolved_at = ?, updated_at = ? WHERE id = ?",
-            (resolved_at.strftime(SQL_FMT), resolved_at.strftime(SQL_FMT), fault_id),
+            "UPDATE faults SET resolved_at = %s, updated_at = %s WHERE id = %s",
+            (resolved_at, resolved_at, fault_id),
         )
         _shift_last_log(fault_id, resolved_at)
 
@@ -187,8 +182,8 @@ def seed() -> None:
             fault_id, user_ids["mudur"], config.STATUS_CLOSED, "Kontrol edildi, kayıt kapatıldı."
         )
         db.execute(
-            "UPDATE faults SET closed_at = ?, updated_at = ? WHERE id = ?",
-            (closed_at.strftime(SQL_FMT), closed_at.strftime(SQL_FMT), fault_id),
+            "UPDATE faults SET closed_at = %s, updated_at = %s WHERE id = %s",
+            (closed_at, closed_at, fault_id),
         )
         _shift_last_log(fault_id, closed_at)
         created += 1
@@ -204,9 +199,9 @@ def seed() -> None:
 def _shift_last_log(fault_id: int, when: datetime) -> None:
     """Demo verisinde log zaman damgasını gerçekçi tarihe çeker."""
     db.execute(
-        """UPDATE fault_logs SET created_at = ?
-            WHERE id = (SELECT MAX(id) FROM fault_logs WHERE fault_id = ?)""",
-        (when.strftime(SQL_FMT), fault_id),
+        """UPDATE fault_logs SET created_at = %s
+            WHERE id = (SELECT MAX(id) FROM fault_logs WHERE fault_id = %s)""",
+        (when, fault_id),
     )
 
 

@@ -1,60 +1,81 @@
-"""Dashboard ve rapor sorguları."""
+"""Dashboard ve rapor sorguları.
+
+Zaman kuralı: veritabanı UTC saklar, ama "bugün açılan" gibi gün bazlı
+sayımlar tesisin yerel gününe göre hesaplanmalıdır. Bu yüzden tarih
+karşılaştırmaları `AT TIME ZONE` ile yerel güne çevrilir.
+
+Süre hesapları `occurred_at` (arızanın yazıldığı an) üzerinden yapılır,
+`created_at` (sunucuya ulaştığı an) üzerinden değil — çevrimdışı girilen
+kayıtlarda ikisi farklıdır.
+"""
 from __future__ import annotations
 
 from datetime import date, timedelta
 
 from app import config
 from app.db import database as db
+from app.utils.helpers import today_local
 
-_ACTIVE_IN = ", ".join("?" for _ in config.ACTIVE_STATUSES)
+_TZ = config.APP_TIMEZONE
+_LOCAL_DAY = f"(f.occurred_at AT TIME ZONE '{_TZ}')::date"
+_LOCAL_CLOSE_DAY = (
+    f"(COALESCE(f.closed_at, f.resolved_at) AT TIME ZONE '{_TZ}')::date"
+)
+# Çözüm süresi saat cinsinden.
+_RESOLUTION_HOURS = "EXTRACT(EPOCH FROM (f.resolved_at - f.occurred_at)) / 3600.0"
 
 
-def _date_filter(date_from: str | None, date_to: str | None, col: str = "created_at"):
+def _date_filter(date_from: str | None, date_to: str | None):
     sql, params = "", []
     if date_from:
-        sql += f" AND date(f.{col}) >= date(?)"
+        sql += f" AND {_LOCAL_DAY} >= %s::date"
         params.append(date_from)
     if date_to:
-        sql += f" AND date(f.{col}) <= date(?)"
+        sql += f" AND {_LOCAL_DAY} <= %s::date"
         params.append(date_to)
     return sql, params
 
 
+def _f(value) -> float | None:
+    """Decimal -> float (psycopg AVG sonucunu Decimal döner)."""
+    return float(value) if value is not None else None
+
+
 # --- Dashboard özeti ------------------------------------------------------
 def summary() -> dict:
-    today = date.today().isoformat()
+    today = today_local().isoformat()
+    active = list(config.ACTIVE_STATUSES)
     return {
         "open_total": db.scalar(
-            f"SELECT COUNT(*) FROM faults f WHERE f.status IN ({_ACTIVE_IN})",
-            tuple(config.ACTIVE_STATUSES),
+            "SELECT COUNT(*) FROM faults f WHERE f.status = ANY(%s)", (active,)
         ),
         "urgent_open": db.scalar(
-            f"""SELECT COUNT(*) FROM faults f
-                 WHERE f.status IN ({_ACTIVE_IN}) AND f.priority = ?""",
-            (*config.ACTIVE_STATUSES, config.PRIORITY_URGENT),
+            """SELECT COUNT(*) FROM faults f
+                WHERE f.status = ANY(%s) AND f.priority = %s""",
+            (active, config.PRIORITY_URGENT),
         ),
         "opened_today": db.scalar(
-            "SELECT COUNT(*) FROM faults f WHERE date(f.created_at) = date(?)", (today,)
+            f"SELECT COUNT(*) FROM faults f WHERE {_LOCAL_DAY} = %s::date", (today,)
         ),
         "closed_today": db.scalar(
-            """SELECT COUNT(*) FROM faults f
-                WHERE date(COALESCE(f.closed_at, f.resolved_at)) = date(?)""",
+            f"SELECT COUNT(*) FROM faults f WHERE {_LOCAL_CLOSE_DAY} = %s::date",
             (today,),
         ),
         "unassigned": db.scalar(
-            f"""SELECT COUNT(*) FROM faults f
-                 WHERE f.status IN ({_ACTIVE_IN}) AND f.assignee_id IS NULL""",
-            tuple(config.ACTIVE_STATUSES),
+            """SELECT COUNT(*) FROM faults f
+                WHERE f.status = ANY(%s) AND f.assignee_id IS NULL""",
+            (active,),
         ),
         "avg_resolution_hours": avg_resolution_hours(),
-        "machine_count": db.scalar("SELECT COUNT(*) FROM machines WHERE is_active = 1"),
+        "machine_count": db.scalar("SELECT COUNT(*) FROM machines WHERE is_active"),
     }
 
 
 def status_distribution(date_from: str | None = None, date_to: str | None = None) -> dict[str, int]:
     extra, params = _date_filter(date_from, date_to)
     rows = db.query(
-        f"SELECT f.status, COUNT(*) AS n FROM faults f WHERE 1=1 {extra} GROUP BY f.status",
+        f"""SELECT f.status, COUNT(*) AS n FROM faults f
+             WHERE TRUE {extra} GROUP BY f.status""",
         tuple(params),
     )
     counts = {s: 0 for s in config.STATUSES}
@@ -69,10 +90,10 @@ def priority_distribution(
     only_active: bool = True,
 ) -> dict[str, int]:
     extra, params = _date_filter(date_from, date_to)
-    sql = f"SELECT f.priority, COUNT(*) AS n FROM faults f WHERE 1=1 {extra}"
+    sql = f"SELECT f.priority, COUNT(*) AS n FROM faults f WHERE TRUE {extra}"
     if only_active:
-        sql += f" AND f.status IN ({_ACTIVE_IN})"
-        params += list(config.ACTIVE_STATUSES)
+        sql += " AND f.status = ANY(%s)"
+        params.append(list(config.ACTIVE_STATUSES))
     sql += " GROUP BY f.priority"
 
     counts = {p: 0 for p in config.PRIORITIES}
@@ -91,20 +112,21 @@ def top_machines(
         f"""
         SELECT m.id, m.name, m.serial_no, m.location, m.category,
                COUNT(f.id) AS fault_count,
-               SUM(CASE WHEN f.status IN ({_ACTIVE_IN}) THEN 1 ELSE 0 END) AS open_count,
-               AVG(CASE WHEN f.resolved_at IS NOT NULL
-                        THEN (julianday(f.resolved_at) - julianday(f.created_at)) * 24.0
-                   END) AS avg_hours
+               COUNT(*) FILTER (WHERE f.status = ANY(%s)) AS open_count,
+               AVG({_RESOLUTION_HOURS}) FILTER (WHERE f.resolved_at IS NOT NULL)
+                   AS avg_hours
           FROM machines m
           JOIN faults f ON f.machine_id = m.id
-         WHERE 1=1 {extra}
+         WHERE TRUE {extra}
          GROUP BY m.id
-         ORDER BY fault_count DESC, m.name COLLATE NOCASE
-         LIMIT ?
+         ORDER BY fault_count DESC, m.name
+         LIMIT %s
         """,
-        (*config.ACTIVE_STATUSES, *params, limit),
+        (list(config.ACTIVE_STATUSES), *params, limit),
     )
-    return [dict(r) for r in rows]
+    for row in rows:
+        row["avg_hours"] = _f(row["avg_hours"])
+    return rows
 
 
 def avg_resolution_hours(
@@ -114,13 +136,12 @@ def avg_resolution_hours(
 ) -> float | None:
     """Genel veya makine bazında ortalama çözüm süresi (saat)."""
     extra, params = _date_filter(date_from, date_to)
-    sql = f"""SELECT AVG((julianday(f.resolved_at) - julianday(f.created_at)) * 24.0)
-                FROM faults f
+    sql = f"""SELECT AVG({_RESOLUTION_HOURS}) FROM faults f
                WHERE f.resolved_at IS NOT NULL {extra}"""
     if machine_id:
-        sql += " AND f.machine_id = ?"
+        sql += " AND f.machine_id = %s"
         params.append(machine_id)
-    return db.scalar(sql, tuple(params), default=None)
+    return _f(db.scalar(sql, tuple(params), default=None))
 
 
 def resolution_by_machine(
@@ -132,25 +153,22 @@ def resolution_by_machine(
         f"""
         SELECT m.id, m.name, m.serial_no, m.location,
                COUNT(f.id) AS total,
-               SUM(CASE WHEN f.resolved_at IS NOT NULL THEN 1 ELSE 0 END) AS resolved,
-               AVG(CASE WHEN f.resolved_at IS NOT NULL
-                        THEN (julianday(f.resolved_at) - julianday(f.created_at)) * 24.0
-                   END) AS avg_hours,
-               MIN(CASE WHEN f.resolved_at IS NOT NULL
-                        THEN (julianday(f.resolved_at) - julianday(f.created_at)) * 24.0
-                   END) AS min_hours,
-               MAX(CASE WHEN f.resolved_at IS NOT NULL
-                        THEN (julianday(f.resolved_at) - julianday(f.created_at)) * 24.0
-                   END) AS max_hours
+               COUNT(*) FILTER (WHERE f.resolved_at IS NOT NULL) AS resolved,
+               AVG({_RESOLUTION_HOURS}) FILTER (WHERE f.resolved_at IS NOT NULL) AS avg_hours,
+               MIN({_RESOLUTION_HOURS}) FILTER (WHERE f.resolved_at IS NOT NULL) AS min_hours,
+               MAX({_RESOLUTION_HOURS}) FILTER (WHERE f.resolved_at IS NOT NULL) AS max_hours
           FROM machines m
           JOIN faults f ON f.machine_id = m.id
-         WHERE 1=1 {extra}
+         WHERE TRUE {extra}
          GROUP BY m.id
-         ORDER BY avg_hours DESC NULLS LAST, m.name COLLATE NOCASE
+         ORDER BY avg_hours DESC NULLS LAST, m.name
         """,
         tuple(params),
     )
-    return [dict(r) for r in rows]
+    for row in rows:
+        for key in ("avg_hours", "min_hours", "max_hours"):
+            row[key] = _f(row[key])
+    return rows
 
 
 # --- Trend ----------------------------------------------------------------
@@ -159,40 +177,47 @@ def trend(date_from: str, date_to: str, group: str = "gun") -> list[dict]:
 
     group: 'gun' | 'hafta' | 'ay'
     """
-    fmt = {"gun": "%Y-%m-%d", "hafta": "%Y-W%W", "ay": "%Y-%m"}.get(group, "%Y-%m-%d")
+    fmt = {"gun": "YYYY-MM-DD", "hafta": 'IYYY"-W"IW', "ay": "YYYY-MM"}.get(
+        group, "YYYY-MM-DD"
+    )
 
     opened = {
         r["bucket"]: r["n"]
         for r in db.query(
-            """SELECT strftime(?, f.created_at) AS bucket, COUNT(*) AS n
-                 FROM faults f
-                WHERE date(f.created_at) BETWEEN date(?) AND date(?)
-                GROUP BY bucket""",
+            f"""SELECT to_char(f.occurred_at AT TIME ZONE '{_TZ}', %s) AS bucket,
+                       COUNT(*) AS n
+                  FROM faults f
+                 WHERE {_LOCAL_DAY} BETWEEN %s::date AND %s::date
+                 GROUP BY bucket""",
             (fmt, date_from, date_to),
         )
     }
     closed = {
         r["bucket"]: r["n"]
         for r in db.query(
-            """SELECT strftime(?, COALESCE(f.closed_at, f.resolved_at)) AS bucket,
-                      COUNT(*) AS n
-                 FROM faults f
-                WHERE COALESCE(f.closed_at, f.resolved_at) IS NOT NULL
-                  AND date(COALESCE(f.closed_at, f.resolved_at)) BETWEEN date(?) AND date(?)
-                GROUP BY bucket""",
+            f"""SELECT to_char(COALESCE(f.closed_at, f.resolved_at)
+                               AT TIME ZONE '{_TZ}', %s) AS bucket,
+                       COUNT(*) AS n
+                  FROM faults f
+                 WHERE COALESCE(f.closed_at, f.resolved_at) IS NOT NULL
+                   AND {_LOCAL_CLOSE_DAY} BETWEEN %s::date AND %s::date
+                 GROUP BY bucket""",
             (fmt, date_from, date_to),
         )
     }
 
-    buckets = _bucket_range(date_from, date_to, group)
     return [
         {"bucket": b, "opened": opened.get(b, 0), "closed": closed.get(b, 0)}
-        for b in buckets
+        for b in _bucket_range(date_from, date_to, group)
     ]
 
 
 def _bucket_range(date_from: str, date_to: str, group: str) -> list[str]:
-    """Boş günleri de içeren sıralı bucket listesi üretir."""
+    """Boş günleri de içeren sıralı bucket listesi üretir.
+
+    Etiketler PostgreSQL'in `to_char` çıktısıyla birebir aynı olmalıdır;
+    hafta için ISO hafta numarası (IYYY-IW) kullanılır.
+    """
     start = date.fromisoformat(date_from)
     end = date.fromisoformat(date_to)
     if end < start:
@@ -204,7 +229,8 @@ def _bucket_range(date_from: str, date_to: str, group: str) -> list[str]:
         if group == "ay":
             key = cursor.strftime("%Y-%m")
         elif group == "hafta":
-            key = cursor.strftime("%Y-W%W")
+            iso_year, iso_week, _ = cursor.isocalendar()
+            key = f"{iso_year}-W{iso_week:02d}"
         else:
             key = cursor.isoformat()
         if not seen or seen[-1] != key:
@@ -218,17 +244,21 @@ def workload_by_technician() -> list[dict]:
     rows = db.query(
         f"""
         SELECT u.id, u.full_name, u.role,
-               SUM(CASE WHEN f.status IN ({_ACTIVE_IN}) THEN 1 ELSE 0 END) AS open_count,
+               COUNT(*) FILTER (WHERE f.status = ANY(%s)) AS open_count,
                COUNT(f.id) AS total_count,
-               AVG(CASE WHEN f.resolved_at IS NOT NULL
-                        THEN (julianday(f.resolved_at) - julianday(f.created_at)) * 24.0
-                   END) AS avg_hours
+               AVG({_RESOLUTION_HOURS}) FILTER (WHERE f.resolved_at IS NOT NULL)
+                   AS avg_hours
           FROM users u
      LEFT JOIN faults f ON f.assignee_id = u.id
-         WHERE u.role IN (?, ?) AND u.is_active = 1
+         WHERE u.role = ANY(%s) AND u.is_active
          GROUP BY u.id
-         ORDER BY open_count DESC, u.full_name COLLATE NOCASE
+         ORDER BY open_count DESC, u.full_name
         """,
-        (*config.ACTIVE_STATUSES, config.ROLE_TECHNICIAN, config.ROLE_MANAGER),
+        (
+            list(config.ACTIVE_STATUSES),
+            [config.ROLE_TECHNICIAN, config.ROLE_MANAGER],
+        ),
     )
-    return [dict(r) for r in rows]
+    for row in rows:
+        row["avg_hours"] = _f(row["avg_hours"])
+    return rows

@@ -21,27 +21,75 @@ BASE_DIR = _base_dir()
 
 
 def data_dir() -> Path:
-    """Veritabanı ve eklerin tutulduğu klasör.
+    """Ek dosyaların ve yerel yedeklerin tutulduğu klasör.
 
     Öncelik sırası:
-      1. MAT_DATA_DIR ortam değişkeni (ağ klasörü paylaşımı için)
+      1. MAT_DATA_DIR ortam değişkeni (sunucu kurulumunda bu kullanılır)
       2. Exe/proje klasöründe `portable.txt` varsa yanındaki `data` klasörü
-      3. %APPDATA%\\MakineArizaTakip
+      3. Windows: Belgeler\\MakineArizaTakip, diğer: ~/.local/share/MakineArizaTakip
+
+    Neden %APPDATA% değil: Microsoft Store sürümü Python, AppData'ya yapılan
+    yazmaları paketin sanal klasörüne yönlendirir. Python bu yolu "var"
+    görür ama pg_dump gibi harici programlar göremez ve yedekleme sessizce
+    kırılır. Belgeler klasörü bu yönlendirmeye tabi değildir.
     """
     env = os.environ.get("MAT_DATA_DIR")
     if env:
         path = Path(env)
     elif (BASE_DIR / "portable.txt").exists():
         path = BASE_DIR / "data"
+    elif os.name == "nt":
+        path = Path.home() / "Documents" / ORG_NAME
     else:
-        appdata = os.environ.get("APPDATA") or str(Path.home())
-        path = Path(appdata) / ORG_NAME
+        path = Path.home() / ".local" / "share" / ORG_NAME
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def db_path() -> Path:
-    return data_dir() / "ariza_takip.db"
+# --- Veritabanı -----------------------------------------------------------
+# Yerel geliştirme varsayılanı. Üretimde DATABASE_URL ortam değişkeni
+# (veya proje kökündeki .env dosyası) ile ezilir.
+DEFAULT_DATABASE_URL = (
+    "postgresql://postgres:MatDev2026!local@localhost:5432/ariza_takip"
+)
+
+DB_POOL_MAX = int(os.environ.get("MAT_DB_POOL_MAX", "8"))
+
+
+def _load_dotenv() -> None:
+    """Proje kökündeki .env dosyasını ortama yükler (varsa).
+
+    Küçük bir okuyucu; python-dotenv bağımlılığı eklemeye değmiyor.
+    Zaten tanımlı ortam değişkenleri ezilmez.
+    """
+    env_file = BASE_DIR / ".env"
+    if not env_file.exists():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
+
+def database_url() -> str:
+    return os.environ.get("DATABASE_URL") or DEFAULT_DATABASE_URL
+
+
+def database_url_safe() -> str:
+    """Şifresi gizlenmiş bağlantı adresi — ekranda/loglarda göstermek için."""
+    url = database_url()
+    if "://" not in url or "@" not in url:
+        return url
+    scheme, _, rest = url.partition("://")
+    credentials, _, host = rest.rpartition("@")
+    user = credentials.split(":", 1)[0]
+    return f"{scheme}://{user}:***@{host}"
 
 
 def attachments_dir() -> Path:
@@ -162,3 +210,7 @@ LOG_LABELS = {
 
 DATETIME_FMT = "%d.%m.%Y %H:%M"
 DATE_FMT = "%d.%m.%Y"
+
+# Veritabanı UTC saklar; kullanıcıya ve raporlara bu saat diliminde gösterilir.
+# Rapor gün sınırları da bu dilime göre hesaplanır.
+APP_TIMEZONE = os.environ.get("MAT_TIMEZONE", "Europe/Istanbul")

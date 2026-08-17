@@ -1,16 +1,13 @@
 """Uygulama içi bildirimler.
 
 MVP kapsamında yalnızca uygulama içi bildirim listesi vardır. E-posta/SMS
-gönderimi internetsiz çalışma gereği nedeniyle kapsam dışıdır; ileride
-`_deliver()` fonksiyonuna bir e-posta kanalı eklenerek genişletilebilir.
+gönderimi ileride `_deliver()` fonksiyonuna bir kanal eklenerek genişletilebilir.
 """
 from __future__ import annotations
 
-import sqlite3
-
 from app import config
 from app.db import database as db
-from app.utils.helpers import now_sql
+from app.utils.helpers import now_utc
 
 
 def _deliver(user_id: int, fault_id: int | None, title: str, message: str) -> None:
@@ -18,18 +15,18 @@ def _deliver(user_id: int, fault_id: int | None, title: str, message: str) -> No
 
     İleride e-posta desteği eklenecekse genişletme noktası burasıdır.
     """
-    db.execute(
+    db.insert(
         """INSERT INTO notifications (user_id, fault_id, title, message, created_at)
-           VALUES (?, ?, ?, ?, ?)""",
-        (user_id, fault_id, title, message, now_sql()),
+           VALUES (%s, %s, %s, %s, %s)""",
+        (user_id, fault_id, title, message, now_utc()),
     )
 
 
 def _technician_ids(exclude: set[int] | None = None) -> list[int]:
     exclude = exclude or set()
     rows = db.query(
-        "SELECT id FROM users WHERE is_active = 1 AND role IN (?, ?)",
-        (config.ROLE_TECHNICIAN, config.ROLE_MANAGER),
+        "SELECT id FROM users WHERE is_active AND role = ANY(%s)",
+        ([config.ROLE_TECHNICIAN, config.ROLE_MANAGER],),
     )
     return [r["id"] for r in rows if r["id"] not in exclude]
 
@@ -56,7 +53,7 @@ def notify_new_fault(
 
 def notify_status_change(
     fault_id: int,
-    fault: sqlite3.Row,
+    fault: dict,
     old_status: str,
     new_status: str,
     actor_id: int,
@@ -72,7 +69,7 @@ def notify_status_change(
         _deliver(uid, fault_id, head, body)
 
 
-def notify_assignment(fault_id: int, fault: sqlite3.Row, assignee_id: int) -> None:
+def notify_assignment(fault_id: int, fault: dict, assignee_id: int) -> None:
     _deliver(
         assignee_id,
         fault_id,
@@ -81,14 +78,14 @@ def notify_assignment(fault_id: int, fault: sqlite3.Row, assignee_id: int) -> No
     )
 
 
-def notify_note(fault_id: int, fault: sqlite3.Row, note: str, actor_id: int) -> None:
+def notify_note(fault_id: int, fault: dict, note: str, actor_id: int) -> None:
     short = note if len(note) <= 120 else note[:117] + "..."
     for uid in _recipients(fault, actor_id):
         _deliver(uid, fault_id, f"Arıza #{fault_id} için yeni not", short)
 
 
 def notify_priority_change(
-    fault_id: int, fault: sqlite3.Row, new_priority: str, actor_id: int
+    fault_id: int, fault: dict, new_priority: str, actor_id: int
 ) -> None:
     head = f"Arıza #{fault_id} önceliği değişti"
     body = (
@@ -100,38 +97,39 @@ def notify_priority_change(
         _deliver(uid, fault_id, head, body)
 
 
-def _recipients(fault: sqlite3.Row, actor_id: int) -> set[int]:
+def _recipients(fault: dict, actor_id: int) -> set[int]:
     """İlgili taraflar: kaydı açan + atanan teknisyen (işlemi yapan hariç)."""
     people = {fault["reporter_id"], fault["assignee_id"]}
     people.discard(None)
     people.discard(actor_id)
-    return people  # type: ignore[return-value]
+    return people
 
 
 # --- Okuma / yönetim ------------------------------------------------------
-def list_for_user(user_id: int, unread_only: bool = False, limit: int = 100) -> list[sqlite3.Row]:
-    sql = "SELECT * FROM notifications WHERE user_id = ?"
+def list_for_user(user_id: int, unread_only: bool = False, limit: int = 100) -> list[dict]:
+    sql = "SELECT * FROM notifications WHERE user_id = %s"
     params: list = [user_id]
     if unread_only:
-        sql += " AND is_read = 0"
-    sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
+        sql += " AND NOT is_read"
+    sql += " ORDER BY created_at DESC, id DESC LIMIT %s"
     params.append(limit)
     return db.query(sql, tuple(params))
 
 
 def unread_count(user_id: int) -> int:
     return db.scalar(
-        "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0", (user_id,)
+        "SELECT COUNT(*) FROM notifications WHERE user_id = %s AND NOT is_read",
+        (user_id,),
     )
 
 
 def mark_read(notification_id: int) -> None:
-    db.execute("UPDATE notifications SET is_read = 1 WHERE id = ?", (notification_id,))
+    db.execute("UPDATE notifications SET is_read = TRUE WHERE id = %s", (notification_id,))
 
 
 def mark_all_read(user_id: int) -> None:
-    db.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?", (user_id,))
+    db.execute("UPDATE notifications SET is_read = TRUE WHERE user_id = %s", (user_id,))
 
 
 def delete_all(user_id: int) -> None:
-    db.execute("DELETE FROM notifications WHERE user_id = ?", (user_id,))
+    db.execute("DELETE FROM notifications WHERE user_id = %s", (user_id,))

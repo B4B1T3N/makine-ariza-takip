@@ -1,253 +1,219 @@
-# Makine Arıza Takip Sistemi
+# Makine Arıza Takip Sistemi — bulut sürümü
 
-Üretim tesisleri için **internet bağlantısı gerektirmeyen** masaüstü arıza kayıt ve
-bakım takip uygulaması. Operatörler arızayı hızlıca bildirir, bakım ekibi kaydı
-işleme alır, yöneticiler makine ve ekip performansını raporlardan izler.
+> **Bu `bulut` dalıdır.** Çalışan çevrimdışı masaüstü sürüm `master` dalındadır
+> ve bozulmamıştır. Buradaki çalışma, uygulamayı buluta taşıma geçişidir.
 
-- **Teknoloji:** Python 3.11+ · PyQt6 · SQLite · matplotlib · openpyxl
-- **Veritabanı:** Tek dosya SQLite — sunucu kurulumu yok
-- **Dağıtım:** Tek `.exe` (PyInstaller), teknik bilgi gerektirmeden çalışır
-- **Arayüz:** Tamamen Türkçe
+Üretim tesisi için arıza kayıt ve bakım takip sistemi. Operatörler arızayı
+bildirir, bakım ekibi kaydı işleme alır, yöneticiler makine ve ekip
+performansını raporlardan izler.
+
+- **Veritabanı:** PostgreSQL 17 (yerel geliştirmede kurulu, üretimde yönetilen servis)
+- **İş mantığı:** Python — arayüzden bağımsız `app/services/` katmanı
+- **Arayüz:** şu an PyQt6 masaüstü (Faz 2–3'te web arayüzüne devredilecek)
+- **Arayüz dili:** tamamen Türkçe
 
 ---
 
-## İçindekiler
+## Geçiş planı ve nerede olduğumuz
 
-1. [Hızlı başlangıç](#hızlı-başlangıç)
-2. [İlk giriş](#i̇lk-giriş)
-3. [Roller ve yetkiler](#roller-ve-yetkiler)
-4. [Özellikler](#özellikler)
-5. [.exe olarak paketleme](#exe-olarak-paketleme)
-6. [Veri konumu ve yedekleme](#veri-konumu-ve-yedekleme)
-7. [Proje yapısı](#proje-yapısı)
-8. [Veritabanı şeması](#veritabanı-şeması)
-9. [Testler](#testler)
-10. [Sık karşılaşılan durumlar](#sık-karşılaşılan-durumlar)
-11. [İleride eklenebilecekler](#i̇leride-eklenebilecekler)
+| Faz | Kapsam | Durum |
+|---|---|---|
+| **1** | PostgreSQL'e geçiş, saat dilimi, çevrimdışı senkron şeması, eşzamanlılık | ✅ **Tamamlandı** |
+| 2 | FastAPI + oturum, arıza listesi/oluşturma/detay, çevrimdışı kuyruk | Sırada |
+| 3 | Makine envanteri, kullanıcılar, dashboard, raporlar (web) | — |
+| 4 | Ekleri nesne depolamaya (S3/Blob) taşıma | — |
+| 5 | Yayın: HTTPS, ortam değişkenleri, yedek doğrulaması | — |
+
+**Faz 1'in kabul kriteri:** mevcut masaüstü arayüz, tek satır değişmeden
+PostgreSQL üzerinde çalışmalı. Sağlandı — veri katmanının doğruluğu web kodu
+yazılmadan önce kanıtlandı.
 
 ---
 
 ## Hızlı başlangıç
 
-Windows'ta, proje klasöründe:
+### 1. PostgreSQL
+
+Yerel geliştirme için PostgreSQL 17 gerekir:
+
+```bat
+winget install --id PostgreSQL.PostgreSQL.17
+```
+
+Ardından iki veritabanı oluşturun:
+
+```bat
+"C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -c "CREATE DATABASE ariza_takip"
+"C:\Program Files\PostgreSQL\17\bin\psql.exe" -U postgres -c "CREATE DATABASE ariza_takip_test"
+```
+
+### 2. Uygulama
 
 ```bat
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+
+copy .env.example .env
+:: .env dosyasını açıp DATABASE_URL içindeki şifreyi kendi şifrenizle değiştirin
+
 python run.py
 ```
 
-> **Not — uzun dosya yolu hatası:** PyQt6, Microsoft Store sürümü Python'un uzun
-> `site-packages` yoluna kurulurken Windows'un 260 karakter sınırına takılabilir
-> (`OSError: [Errno 2] No such file or directory: ...`). Yukarıdaki gibi proje
-> klasöründe bir sanal ortam (`.venv`) kullanmak bu sorunu çözer.
-
-Linux/macOS'ta da aynı komutlar geçerlidir (`source .venv/bin/activate`).
-
-### Demo verisiyle denemek
-
-Gerçek verilerle uğraşmadan uygulamayı görmek için 10 makine, 5 kullanıcı ve
-~140 arıza kaydı üretin:
+### 3. Demo verisi (isteğe bağlı)
 
 ```bat
-python tools\seed_demo.py            :: mevcut veritabanına ekler
-python tools\seed_demo.py --reset    :: veritabanını sıfırlayıp yeniden kurar
+python tools\seed_demo.py --reset
 ```
 
-Demo kullanıcıları (şifre `1234`): `ahmet`, `zeynep` (operatör) · `mehmet`,
-`elif` (teknisyen) · `mudur` (yönetici).
+10 makine, 5 kullanıcı ve ~140 arıza kaydı üretir. Giriş: `mudur` / `1234`
+(diğerleri: `ahmet`, `zeynep` operatör; `mehmet`, `elif` teknisyen).
 
-### Gerçek kullanıma geçerken
-
-Demo verisini temizleyip yalnızca `admin` hesabıyla boş bir veritabanı bırakmak
-için (mevcut veri önce otomatik yedeklenir):
+Gerçek kullanıma geçerken demo veriyi temizlemek için:
 
 ```bat
 python tools\reset_db.py
 ```
 
+### İlk giriş
+
+Varsayılan yönetici: **`admin` / `admin`**. Uygulama sizi uyarır —
+**Ayarlar → Şifremi Değiştir** menüsünden hemen değiştirin.
+
+> **Uzun dosya yolu hatası (Windows):** PyQt6, Microsoft Store sürümü Python'un
+> uzun `site-packages` yoluna kurulurken 260 karakter sınırına takılabilir.
+> Proje klasöründe `.venv` kullanmak bunu çözer.
+
 ---
 
-## İlk giriş
+## Faz 1'de ne değişti
 
-Uygulama ilk açıldığında varsayılan yönetici hesabı otomatik oluşturulur:
+### Zaman damgaları artık UTC
 
-| Kullanıcı adı | Şifre   |
-| ------------- | ------- |
-| `admin`       | `admin` |
+Tüm zamanlar `TIMESTAMPTZ` olarak **UTC** saklanır, ekranda **Europe/Istanbul**
+saatiyle gösterilir. Raporlardaki gün sınırları da yerel saate göre hesaplanır
+(`AT TIME ZONE`), yoksa gece yarısı civarındaki kayıtlar yanlış güne düşerdi.
 
-Giriş yaptıktan sonra uygulama sizi uyarır — **Ayarlar → Şifremi Değiştir**
-menüsünden şifreyi hemen değiştirin. Ardından **Kullanıcılar** ekranından
-personelinizi ekleyin.
+Saat dilimi `MAT_TIMEZONE` ile değiştirilebilir.
+
+### Çevrimdışı kayıt için üç yeni sütun
+
+İnternet kesildiğinde operatörün girdiği kayıt tarayıcıda kuyruğa alınacak ve
+bağlantı gelince gönderilecek (Faz 2). Bunun şema tarafı Faz 1'de hazırlandı:
+
+| Sütun | Ne işe yarıyor |
+|---|---|
+| `faults.client_uuid` | Kaydın kimliğini istemci üretir. Yanıt kaybolup istemci tekrar denerse **aynı arıza ikinci kez kaydedilmez.** |
+| `faults.occurred_at` | Arızanın **cihazda yazıldığı** an. `created_at` sunucuya ulaştığı andır. Çevrimdışı kayıtta ikisi saatlerce farklı olabilir. |
+| `faults.version` | İyimser kilitleme. İki teknisyen aynı kaydı aynı anda değiştiremez; ikincisi uyarı alır. |
+
+Çözüm süresi ve trend raporları `occurred_at` üzerinden hesaplanır. `created_at`
+kullanılsaydı, çevrimdışı bekleyen bir kaydın çözüm süresi olduğundan kısa görünürdü.
+
+**Çevrimdışı kapsamı:** korunan şey operatörün **yeni kayıt girişidir**.
+Çevrimdışıyken tüm listeyi görüntüleme ve durum değiştirme kapsam dışıdır —
+o çift yönlü senkronizasyon demektir ve ayrı bir çakışma çözümü gerektirir.
+
+### SQL lehçesi çevirisi
+
+`julianday` → `EXTRACT(EPOCH FROM ...)`, `strftime` → `to_char`,
+`COLLATE NOCASE` → `CITEXT`, `AUTOINCREMENT` → `IDENTITY`,
+`?` → `%s`. Türkçe harf sıralaması için `COLLATE "tr-TR-x-icu"` kullanılır.
+
+### Bağlantı havuzu ve işlem bütünlüğü
+
+`app/db/database.py` artık psycopg3 bağlantı havuzu kullanır. `db.transaction()`
+bloğu içindeki tüm sorgular aynı bağlantıya katılır (contextvars ile), böylece
+"durum değişikliği + geçmiş kaydı + bildirim" ya birlikte yazılır ya hiç.
 
 ---
 
 ## Roller ve yetkiler
 
-| Yetki                                   | Operatör | Teknisyen | Yönetici |
-| --------------------------------------- | :------: | :-------: | :------: |
-| Arıza kaydı açma                        |    ✓     |     ✓     |    ✓     |
-| Tüm arıza kayıtlarını görme             |    —     |     ✓     |    ✓     |
-| Kendi açtığı kayıtları görme            |    ✓     |     ✓     |    ✓     |
-| Durum güncelleme (iş akışı)             |    —     |     ✓     |    ✓     |
-| Not ekleme / dosya yükleme              |    ✓     |     ✓     |    ✓     |
-| Teknisyen atama                         |    —     |     ✓     |    ✓     |
-| Makine envanteri yönetimi               |    —     |     —     |    ✓     |
-| Raporlar                                |    —     |     ✓     |    ✓     |
-| Kullanıcı ve rol yönetimi               |    —     |     —     |    ✓     |
-| Yedekten geri yükleme                   |    —     |     —     |    ✓     |
+| Yetki | Operatör | Teknisyen | Yönetici |
+| --- | :-: | :-: | :-: |
+| Arıza kaydı açma | ✓ | ✓ | ✓ |
+| Tüm kayıtları görme | — | ✓ | ✓ |
+| Durum güncelleme | — | ✓ | ✓ |
+| Not / dosya ekleme | ✓ | ✓ | ✓ |
+| Teknisyen atama | — | ✓ | ✓ |
+| Makine envanteri yönetimi | — | — | ✓ |
+| Raporlar | — | ✓ | ✓ |
+| Kullanıcı yönetimi | — | — | ✓ |
 
-Operatörler yalnızca **kendi açtıkları** kayıtları görür; ekranlarında rapor ve
-envanter yönetimi sekmeleri hiç görünmez.
+Operatörler yalnızca kendi açtıkları kayıtları görür; envanter ve rapor
+sekmeleri ekranlarında hiç oluşturulmaz.
 
 ---
 
 ## Özellikler
 
-### Arıza kaydı ve durum takibi
-
-Durum akışı zorunludur; ara adım atlanamaz:
+**Durum akışı** (ara adım atlanamaz):
 
 ```
 Açık → İnceleniyor → Parça/Bekleme → Çözüldü → Kapatıldı
 ```
 
-- Geçerli geçişler uygulama tarafından denetlenir (örn. *Açık*'tan doğrudan
-  *Kapatıldı*'ya geçilemez).
-- **Çözüldü** ve **Kapatıldı** durumlarına geçerken açıklama girmek zorunludur.
-- Çözülmüş bir kayıt yeniden açılırsa çözüm tarihi sıfırlanır — çözüm süresi
-  istatistikleri bozulmaz.
-- **Kapatıldı** son durumdur, üzerinde değişiklik yapılamaz.
+Çözüldü/Kapatıldı geçişlerinde açıklama zorunludur. Çözülmüş kayıt yeniden
+açılırsa çözüm tarihi sıfırlanır. Kapatıldı son durumdur.
 
-Her kayıt için tam geçmiş tutulur: kim, ne zaman, hangi durumu değiştirdi, hangi
+Her kayıtta tam geçmiş tutulur: kim, ne zaman, hangi durumu değiştirdi, hangi
 notu ekledi, kimi atadı, hangi dosyayı yükledi.
 
-**Filtreleme:** kayıt no / başlık / açıklama / makine adında metin araması,
-makine, durum, öncelik, tarih aralığı ve "bana atananlar" filtreleri.
+**Filtreleme:** kayıt no / başlık / açıklama / makine adında arama, makine,
+durum, öncelik, tarih aralığı, "bana atananlar".
 
-**Ekler:** her kayda fotoğraf veya belge yüklenebilir (dosya başına en fazla
-20 MB). Dosyalar veri klasöründeki `ekler/` altında saklanır.
+**Makine envanteri:** künye, makine bazlı arıza geçmişi, ortalama çözüm süresi.
+Makineler silinmez, pasife alınır; üzerinde açık arıza varsa pasife alınamaz.
 
-### Makine envanteri
+**Bildirimler:** uygulama içi. Yeni arıza → bakım ekibine; durum/öncelik
+değişikliği ve notlar → kaydı açana ve atanana.
 
-Makine adı, seri no (benzersiz), konum/hat, kategori, devreye alma tarihi ve
-serbest not alanı. Makine detay ekranında o makinenin **tüm arıza geçmişi**,
-toplam/açık kayıt sayısı ve ortalama çözüm süresi görünür.
-
-Makineler silinmez, **pasife alınır** — geçmiş kayıtlar korunur. Üzerinde
-kapanmamış arıza olan bir makine pasife alınamaz.
-
-### Bildirimler (uygulama içi)
-
-- Yeni arıza açıldığında → atanan teknisyene, atama yoksa tüm bakım ekibine
-- Durum veya öncelik değiştiğinde → kaydı açan operatöre ve atanan teknisyene
-- Not eklendiğinde → ilgili taraflara
-- Atama yapıldığında → atanan kişiye
-
-Sol menüdeki **Bildirimler** düğmesi okunmamış sayıyı gösterir. E-posta/SMS
-gönderimi, uygulama çevrimdışı çalıştığı için kapsam dışıdır
-(bkz. [İleride eklenebilecekler](#i̇leride-eklenebilecekler)).
-
-### Dashboard ve raporlar
-
-**Ana sayfa:** açık kayıt sayısı, acil öncelikli kayıtlar, bugün açılan/kapanan,
-atanmamış kayıtlar, ortalama çözüm süresi; öncelik ve durum dağılımı grafikleri;
-role göre değişen öncelikli kayıt listesi.
-
-**Raporlar ekranı** (teknisyen ve yönetici):
-
-- Tarih aralığı seçimi (son 7/30/90 gün, 6 ay, 1 yıl veya özel aralık)
-- Açılan/çözülen arıza trendi — günlük, haftalık veya aylık gruplama
-- En çok arızalanan 10 makine
-- Makine bazında ortalama / en hızlı / en yavaş çözüm süresi
-- Personel iş yükü
-
-**Dışa aktarma:** her liste ve rapor Excel (`.xlsx`) veya CSV olarak kaydedilir.
-"Tüm Raporları Excel'e Aktar" tek dosyada ayrı sayfalar üretir. CSV çıktısı
-UTF-8 BOM + noktalı virgül ayraçla yazılır; Türkçe Excel'de doğrudan düzgün açılır.
+**Raporlar:** arıza trendi (gün/hafta/ay), en çok arızalanan 10 makine, makine
+bazında çözüm süreleri, personel iş yükü. Tümü Excel/CSV olarak dışa aktarılır.
 
 ---
 
-## .exe olarak paketleme
+## Yedekleme
+
+Karar: **haftada bir dış yedek.**
 
 ```bat
-build.bat
+python tools\backup_now.py           :: periyot dolduysa al
+python tools\backup_now.py --force   :: hemen al
+python tools\backup_now.py --durum   :: son yedeğin yaşını göster
 ```
 
-Betik bağımlılıkları kurar, eski çıktıları temizler ve PyInstaller'ı çalıştırır.
-Sonuç: **`dist\MakineArizaTakip.exe`** — yaklaşık 64 MB, tek dosya, Python kurulu
-olmayan bilgisayarlarda da çalışır.
+`pg_dump` ile sıkıştırılmış özel biçimde alınır ve **her yedek `pg_restore`
+ile doğrulanır** — doğrulanmamış yedek yedek değildir. En yeni 12 yedek
+saklanır, eskiler otomatik silinir.
 
-Elle çalıştırmak isterseniz:
+Haftalık zamanlanmış görev (Windows):
 
 ```bat
-pip install -r requirements-dev.txt
-pyinstaller MakineArizaTakip.spec --noconfirm --clean
+schtasks /create /tn "Ariza Takip Yedek" /sc weekly /d SUN /st 03:00 ^
+         /tr "\"%CD%\.venv\Scripts\python.exe\" \"%CD%\tools\backup_now.py\""
 ```
 
-Kendi simgenizi kullanmak için `MakineArizaTakip.spec` içindeki `icon=None`
-satırını `icon="logo.ico"` olarak değiştirin.
-
-### Kurulum yerine dağıtım
-
-Exe tek dosya olduğu için ayrı bir kuruluma gerek yoktur: dosyayı hedef
-bilgisayara kopyalayıp çift tıklamak yeterlidir. İsteğe bağlı olarak Inno Setup
-veya benzeri bir araçla Başlat menüsü kısayolu üreten bir installer da
-hazırlanabilir.
-
----
-
-## Veri konumu ve yedekleme
-
-### Veritabanı nerede tutulur?
-
-Sırayla ilk bulunan kullanılır:
-
-1. `MAT_DATA_DIR` ortam değişkeni — **paylaşımlı ağ klasörü** için kullanın
-2. Exe'nin yanında `portable.txt` dosyası varsa → yanındaki `data\` klasörü
-   (USB bellekten taşınabilir kullanım)
-3. Varsayılan: `%APPDATA%\MakineArizaTakip\`
-
-Klasör yapısı:
+Sunucuda (Linux) crontab:
 
 ```
-MakineArizaTakip\
-├── ariza_takip.db     Veritabanı (tüm kayıtlar)
-├── ekler\             Arıza kayıtlarına yüklenen dosyalar
-└── yedekler\          Uygulama içinden alınan yedekler
+0 3 * * 0  /opt/ariza-takip/.venv/bin/python /opt/ariza-takip/tools/backup_now.py
 ```
 
-Uygulama içinden **Ayarlar → Veri Klasörünü Göster** ile bu klasörü açabilirsiniz.
+> **Önemli:** Haftalık, en kötü senaryoda **7 günlük kayıt kaybı** demektir.
+> Yönetilen PostgreSQL sağlayıcıları ücretsiz olarak günlük otomatik yedek +
+> zaman noktasına dönüş sunar — **onu kapatmayın.** Buradaki haftalık yedek
+> onun yerine değil, sağlayıcıdan bağımsız ikinci bir kopya olarak üstünedir.
 
-### Yedek alma
+### Yerel dosyalar nerede
 
-**Ayarlar** menüsünden:
+Ek dosyaları ve yedekler `Belgeler\MakineArizaTakip\` altındadır
+(`MAT_DATA_DIR` ile değiştirilebilir). Faz 4'te ekler nesne depolamaya taşınacak.
 
-- **Yedek Al** — yalnızca veritabanının `.db` kopyası
-- **Tam Yedek Al** — veritabanı + tüm ek dosyaları, tek `.zip` arşivinde
-- **Yedekten Geri Yükle** (yalnız yönetici) — mevcut veri otomatik olarak
-  yedeklenir, ardından seçilen dosya geri yüklenir ve uygulama kapanır
-
-Yedekleme, uygulama açıkken de tutarlı kopya üreten SQLite `backup` API'sini
-kullanır. Geri yüklemede dosyanın geçerli bir uygulama yedeği olduğu doğrulanır.
-
-> **Öneri:** Yedekler klasörünü haftalık olarak harici bir diske veya ağ
-> klasörüne kopyalayın.
-
-### Birden fazla bilgisayardan erişim
-
-MVP kapsamı tek bilgisayardır. Küçük ekipler için `MAT_DATA_DIR` değişkenini
-paylaşımlı bir ağ klasörüne yönlendirerek aynı veritabanını kullanabilirsiniz:
-
-```bat
-setx MAT_DATA_DIR "\\sunucu\paylasim\ArizaTakip"
-```
-
-Bu senaryoda aynı anda yazan kullanıcı sayısını sınırlı tutun. Yoğun eşzamanlı
-kullanım için ileride yerel bir FastAPI/Flask sunucu katmanı eklenmesi
-önerilir — mevcut servis katmanı (`app/services/`) arayüzden bağımsız yazıldığı
-için bu geçiş kolaydır.
+> `%APPDATA%` bilerek kullanılmıyor: Microsoft Store sürümü Python, AppData
+> yazmalarını paketin sanal klasörüne yönlendirir. Python yolu "var" görür ama
+> `pg_dump` göremez ve yedekleme sessizce kırılır.
 
 ---
 
@@ -256,77 +222,62 @@ için bu geçiş kolaydır.
 ```
 makine-ariza-takip/
 ├── run.py                      Başlatıcı
-├── build.bat                   Tek tıkla .exe üretimi
-├── MakineArizaTakip.spec       PyInstaller yapılandırması
-├── requirements.txt            Çalışma zamanı bağımlılıkları
-├── requirements-dev.txt        Geliştirme/paketleme araçları
+├── .env.example                Ortam değişkeni şablonu (.env gitignore'da)
+├── requirements.txt
 │
 ├── app/
-│   ├── config.py               Sabitler: roller, durumlar, öncelikler, yollar
-│   ├── main.py                 Uygulama giriş noktası
+│   ├── config.py               Sabitler, DATABASE_URL, saat dilimi, yollar
+│   ├── main.py                 Giriş noktası
 │   │
 │   ├── db/
-│   │   ├── schema.sql          Veritabanı şeması
-│   │   └── database.py         Bağlantı yönetimi, kurulum
+│   │   ├── schema.sql          PostgreSQL şeması
+│   │   └── database.py         Bağlantı havuzu, transaction, sorgu yardımcıları
 │   │
-│   ├── services/               İş mantığı (arayüzden bağımsız)
-│   │   ├── auth_service.py     Giriş, kullanıcı ve yetki yönetimi
+│   ├── services/               İş mantığı — arayüzden bağımsız, web'e taşınacak
+│   │   ├── auth_service.py     Giriş, kullanıcı, yetkiler
 │   │   ├── machine_service.py  Makine envanteri
-│   │   ├── fault_service.py    Arıza kayıtları, durum akışı, log, ekler
+│   │   ├── fault_service.py    Arıza, durum akışı, log, ekler, idempotency
 │   │   ├── notification_service.py
-│   │   ├── report_service.py   Rapor ve dashboard sorguları
-│   │   └── backup_service.py   Yedekleme / geri yükleme
+│   │   ├── report_service.py   Rapor sorguları
+│   │   └── backup_service.py   pg_dump / pg_restore
 │   │
-│   ├── ui/                     PyQt6 ekranları
-│   │   ├── style.py            Renk paleti ve stil sayfası
-│   │   ├── login_dialog.py
-│   │   ├── main_window.py      Sol menü, sayfa yönlendirme
-│   │   ├── dashboard_view.py
-│   │   ├── faults_view.py / fault_dialog.py / fault_detail_dialog.py
-│   │   ├── machines_view.py / machine_dialog.py / machine_detail_dialog.py
-│   │   ├── users_view.py / user_dialog.py
-│   │   ├── reports_view.py
-│   │   ├── notifications_dialog.py
-│   │   └── widgets/            Ortak bileşenler ve grafikler
-│   │
+│   ├── ui/                     PyQt6 ekranları (Faz 3'te web devralacak)
 │   └── utils/
 │       ├── security.py         PBKDF2 şifre saklama
-│       ├── helpers.py          Tarih/süre biçimlendirme
-│       └── export.py           Excel / CSV dışa aktarma
+│       ├── helpers.py          UTC ↔ yerel saat dönüşümleri
+│       └── export.py           Excel / CSV
 │
-├── tests/                      pytest test paketi
-└── tools/seed_demo.py          Demo verisi üretici
+├── tests/                      76 test
+└── tools/
+    ├── seed_demo.py            Demo verisi
+    ├── reset_db.py             Sıfırlama (önce yedek alır)
+    └── backup_now.py           Haftalık yedek
 ```
 
-Mimari not: **arayüz doğrudan SQL çalıştırmaz.** Tüm iş kuralları
-`app/services/` altındadır; ekranlar yalnızca servisleri çağırır. Bu sayede
-ileride web/mobil bir arayüz eklemek veya servisleri bir API'nin arkasına almak
-mümkündür.
+**Mimari not:** arayüz doğrudan SQL çalıştırmaz. Tüm iş kuralları
+`app/services/` altındadır — web arayüzü bu katmanı olduğu gibi kullanacak.
 
 ---
 
 ## Veritabanı şeması
 
-| Tablo           | Amaç                                                          |
-| --------------- | ------------------------------------------------------------- |
-| `users`         | Kullanıcılar, roller, PBKDF2 şifre özeti, aktiflik            |
-| `machines`      | Makine künyesi, konum, kategori, devreye alma, aktiflik       |
-| `faults`        | Arıza kayıtları; durum, öncelik, bildiren, atanan, tarihler   |
-| `fault_logs`    | Kayıt geçmişi: kim / ne zaman / hangi değişiklik / hangi not  |
-| `attachments`   | Kayda yüklenen dosyaların künyesi                             |
-| `notifications` | Uygulama içi bildirimler, okundu bilgisi                      |
-| `app_meta`      | Şema sürümü ve basit ayarlar                                  |
+| Tablo | Amaç |
+| --- | --- |
+| `users` | Kullanıcılar, roller, PBKDF2 şifre özeti |
+| `machines` | Makine künyesi, konum, kategori, aktiflik |
+| `faults` | Arıza kayıtları + `client_uuid`, `occurred_at`, `version` |
+| `fault_logs` | Kayıt geçmişi: kim / ne zaman / hangi değişiklik |
+| `attachments` | Yüklenen dosyaların künyesi |
+| `notifications` | Uygulama içi bildirimler |
+| `app_meta` | Şema sürümü ve basit ayarlar |
 
-Şemanın tamamı ve alan açıklamaları için `app/db/schema.sql` dosyasına bakın.
+**Veri bütünlüğü:** arıza kaydı olan makine silinemez (`RESTRICT`); arıza
+silinirse geçmişi ve ekleri de silinir (`CASCADE`); kullanıcı silinirse
+geçmişteki adı `NULL` olur ama kayıt korunur — bu yüzden kullanıcılar
+silinmez, pasife alınır.
 
-**Veri bütünlüğü:** yabancı anahtarlar etkindir. Arıza kaydı olan bir makine
-silinemez (`ON DELETE RESTRICT`); arıza kaydı silinirse geçmişi ve ekleri de
-silinir (`ON DELETE CASCADE`); kullanıcı silinirse geçmişteki adı `NULL` olur
-ancak kayıt korunur — bu yüzden kullanıcılar silinmez, pasife alınır.
-
-**Şifre saklama:** şifreler düz metin tutulmaz. Kullanıcı başına rastgele salt
-ile PBKDF2-HMAC-SHA256 (200.000 tur) özeti saklanır; yalnızca standart kütüphane
-kullanıldığı için ek bağımlılık gerekmez.
+**Şifreler:** düz metin saklanmaz. Kullanıcı başına rastgele salt ile
+PBKDF2-HMAC-SHA256 (200.000 tur). Sadece standart kütüphane kullanılır.
 
 ---
 
@@ -336,45 +287,25 @@ kullanıldığı için ek bağımlılık gerekmez.
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-61 test; kimlik doğrulama ve yetkiler, tam durum akışı ve geçersiz geçişlerin
-reddi, kayıt geçmişi, tüm filtreler, makine envanteri koruma kuralları,
-bildirimler, rapor sorguları, Excel/CSV çıktısı ve yedekleme/geri yükleme
-kapsanır. Her test izole geçici bir veritabanı kullanır, gerçek veriye dokunmaz.
+76 test. Her test izole bir test veritabanı kullanır ve şemayı sıfırdan kurar;
+`TEST_DATABASE_URL` adında "test" geçmiyorsa çalışmayı reddeder — üretim
+veritabanının yanlışlıkla silinmesini önlemek için.
+
+Kapsam: kimlik doğrulama ve yetkiler, tam durum akışı ve geçersiz geçişlerin
+reddi, kayıt geçmişi, tüm filtreler, envanter koruma kuralları, bildirimler,
+rapor sorguları, Excel/CSV çıktısı, yedekleme/geri yükleme; ayrıca Faz 1'in
+yeni davranışları: çevrimdışı idempotency, cihaz saati/sunucu saati ayrımı,
+iyimser kilitleme, saat dilimi gün sınırları.
 
 ---
 
-## Sık karşılaşılan durumlar
+## Bilinen kısıtlar
 
-**"Kayıtlı aktif makine yok" uyarısı alıyorum.**
-Arıza kaydı açmadan önce yöneticinin **Makine Envanteri**'ne en az bir makine
-eklemesi gerekir.
-
-**Bir kaydı yanlışlıkla kapattım.**
-Kapatılmış kayıt değiştirilemez. Sorun devam ediyorsa aynı makine için yeni bir
-kayıt açın; makine detay ekranında iki kayıt da geçmişte görünür.
-
-**Excel dosyası kaydedilemiyor.**
-Aynı isimli dosya Excel'de açıksa yazılamaz. Dosyayı kapatıp tekrar deneyin.
-
-**Şifresini unutan bir kullanıcı var.**
-Yönetici, **Kullanıcılar → Düzenle** ekranından yeni şifre belirleyebilir.
-
-**Yönetici şifresi unutuldu.**
-Şifreler geri döndürülemez biçimde saklanır. Bu durumda yedekten dönmek veya
-veritabanındaki `users` tablosuna doğrudan müdahale etmek gerekir.
-
----
-
-## İleride eklenebilecekler
-
-Bu sürümün kapsamı dışında bırakılan, mevcut yapıya eklenebilecek özellikler:
-
-- **E-posta/SMS bildirimi** — `notification_service._deliver()` fonksiyonu tek
-  genişletme noktasıdır; internet erişimi olan kurulumlarda buraya bir e-posta
-  kanalı eklenebilir.
-- **Ağ üzerinden çok kullanıcılı erişim** — servis katmanının önüne yerel bir
-  FastAPI/Flask katmanı.
-- Periyodik bakım planlama ve hatırlatma
-- Yedek parça / stok takibi
-- Otomatik zamanlanmış yedekleme
-- Bulut senkronizasyonu, mobil uygulama, çoklu dil desteği
+- **Ekler hâlâ yerel diskte.** Faz 4'e kadar sunucuda kalıcı disk gerekir.
+- **Oturum yönetimi yok.** `CurrentUser` bellekte bir nesne; web için oturum
+  çerezi Faz 2'de gelecek.
+- **Şifre karmaşıklık kuralı yok** — sadece en az 4 karakter.
+- **Hesap kilitleme yok.** Sınırsız şifre denemesi yapılabilir; PBKDF2'nin
+  yavaşlığı kısmi koruma sağlar ama gerçek bir önlem değildir.
+- **İnternet kesintisi** — fabrika interneti güvenilir kabul edildi. Çevrimdışı
+  koruma yalnızca yeni kayıt girişi içindir (bkz. yukarıdaki kapsam notu).

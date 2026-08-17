@@ -1,6 +1,12 @@
-"""Test ortamı: her test izole bir geçici veritabanı kullanır."""
+"""Test ortamı.
+
+Testler ayrı bir PostgreSQL veritabanına bağlanır ve her testten önce tüm
+tabloları siler. Bağlantı adresi `TEST_DATABASE_URL` ile verilir; üretim
+veritabanının yanlışlıkla silinmemesi için adında "test" geçmesi zorunludur.
+"""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -9,17 +15,48 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
-@pytest.fixture()
-def app_db(tmp_path, monkeypatch):
-    """Geçici veri klasörü ile kurulmuş boş bir veritabanı döner."""
-    monkeypatch.setenv("MAT_DATA_DIR", str(tmp_path))
+def _test_database_url() -> str:
+    from app import config  # .env yüklensin diye içeride import edilir
+
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        # Varsayılan: üretim adresinin yanına "_test" eklenmiş veritabanı.
+        base = config.database_url()
+        url = base.rsplit("/", 1)[0] + "/ariza_takip_test"
+
+    if "test" not in url.rsplit("/", 1)[-1].lower():
+        raise RuntimeError(
+            "TEST_DATABASE_URL bir test veritabanını göstermeli "
+            f"(adında 'test' geçmeli). Şu an: {url.rsplit('/', 1)[-1]}"
+        )
+    return url
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _point_at_test_database():
+    """Tüm oturum boyunca uygulamayı test veritabanına yönlendirir."""
+    url = _test_database_url()
+    os.environ["DATABASE_URL"] = url
+
+    from app import config
+    config.DEFAULT_DATABASE_URL = url
+
+    yield
 
     from app.db import database
+    database.close_pool()
 
-    database.close_connection()
+
+@pytest.fixture()
+def app_db(_point_at_test_database):
+    """Her test için boş, yeni kurulmuş bir şema."""
+    from app.db import database
+
+    database.close_pool()
+    database.drop_all()
     database.init_db()
     yield database
-    database.close_connection()
+    database.close_pool()
 
 
 @pytest.fixture()

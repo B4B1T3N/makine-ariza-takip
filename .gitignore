@@ -9,12 +9,14 @@ build/
 dist/
 *.manifest
 
-# Yerel veri (asla depoya girmemeli)
+# Yerel veri ve sırlar (asla depoya girmemeli)
 data/
 *.db
 *.db-wal
 *.db-shm
+*.dump
 portable.txt
+.env
 
 # Dışa aktarılan raporlar / yedekler
 *.xlsx

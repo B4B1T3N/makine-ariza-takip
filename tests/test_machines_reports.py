@@ -230,12 +230,18 @@ def test_tam_yedek_zip(app_db, users, machines, tmp_path):
 
     archive = backup_service.backup_full(tmp_path / "tam.zip")
     with zipfile.ZipFile(archive) as zf:
-        assert "ariza_takip.db" in zf.namelist()
+        assert "ariza_takip.dump" in zf.namelist()
+
+
+def test_yedek_dogrulanir(app_db, users, machines, tmp_path):
+    """Alınan her yedek pg_restore ile okunabilir olmalı."""
+    target = backup_service.backup_database(tmp_path / "yedek.dump")
+    assert backup_service.verify_backup(target) > 0
 
 
 def test_gecersiz_yedek_reddedilir(app_db, tmp_path):
-    bad = tmp_path / "sahte.db"
-    bad.write_text("bu bir sqlite dosyasi degil")
+    bad = tmp_path / "sahte.dump"
+    bad.write_text("bu gecerli bir pg_dump arsivi degil")
     with pytest.raises(backup_service.BackupError):
         backup_service.restore_database(bad)
 

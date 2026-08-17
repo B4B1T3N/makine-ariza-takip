@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
 
         self.setStatusBar(QStatusBar())
         self._set_status(f"{config.APP_NAME} {config.APP_VERSION} · "
-                         f"Veri klasörü: {config.data_dir()}")
+                         f"Veritabanı: {config.database_url_safe()}")
 
         self.nav_list.setCurrentRow(0)
         self._update_notification_badge()
@@ -232,7 +232,7 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getSaveFileName(
             self, "Veritabanı yedeğini kaydet",
             str(config.backups_dir() / backup_service.default_backup_name()),
-            "SQLite Veritabanı (*.db)",
+            "PostgreSQL Yedeği (*.dump)",
         )
         if not path:
             return
@@ -273,7 +273,7 @@ class MainWindow(QMainWindow):
     def _restore_backup(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Geri yüklenecek yedeği seçin",
-            str(config.backups_dir()), "SQLite Veritabanı (*.db)",
+            str(config.backups_dir()), "PostgreSQL Yedeği (*.dump)",
         )
         if not path:
             return
@@ -326,7 +326,7 @@ class MainWindow(QMainWindow):
             "<p>Üretim tesisleri için çevrimdışı çalışan arıza kayıt ve "
             "bakım takip sistemi.</p>"
             f"<p><b>Veri klasörü:</b><br>{config.data_dir()}</p>"
-            f"<p><b>Veritabanı:</b><br>{config.db_path()}</p>",
+            f"<p><b>Veritabanı:</b><br>{config.database_url_safe()}</p>",
         )
 
     def _check_default_password(self) -> None:

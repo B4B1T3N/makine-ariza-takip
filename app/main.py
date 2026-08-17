@@ -55,9 +55,10 @@ def main() -> int:
     except Exception as exc:
         QMessageBox.critical(
             None, "Veritabanı hatası",
-            f"Veritabanı açılamadı:\n{exc}\n\n"
-            f"Konum: {config.db_path()}\n\n"
-            "Klasör yazma izinlerini kontrol edin.",
+            f"Veritabanına bağlanılamadı:\n{exc}\n\n"
+            f"Adres: {config.database_url_safe()}\n\n"
+            "PostgreSQL sunucusunun çalıştığını ve .env dosyasındaki "
+            "DATABASE_URL değerinin doğru olduğunu kontrol edin.",
         )
         return 1
 

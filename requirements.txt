@@ -1,9 +1,17 @@
-# Makine Arıza Takip Sistemi - çalışma zamanı bağımlılıkları
+# Makine Arıza Takip Sistemi - çalışma zamanı bağımlılıkları (bulut sürümü)
 # Kurulum:  pip install -r requirements.txt
 
-PyQt6>=6.6,<7          # Masaüstü arayüz
-matplotlib>=3.8,<4     # Dashboard ve rapor grafikleri
-openpyxl>=3.1,<4       # Excel (.xlsx) dışa aktarma
+# --- Veritabanı ---
+psycopg[binary]>=3.1,<4    # PostgreSQL sürücüsü
+psycopg-pool>=3.2,<4       # Bağlantı havuzu
+tzdata>=2024.1             # Windows'ta zoneinfo için IANA saat dilimi verisi
 
-# Not: Veritabanı için Python'un yerleşik sqlite3 modülü kullanılır,
-# ek bir paket veya sunucu gerekmez.
+# --- Raporlama ---
+openpyxl>=3.1,<4           # Excel (.xlsx) dışa aktarma
+
+# --- Masaüstü arayüz ---
+# Faz 1'de masaüstü arayüz PostgreSQL'e karşı çalışmaya devam ediyor; geçişin
+# doğruluğunu kanıtlayan referans budur. Faz 3 sonunda web arayüzü devralınca
+# bu iki satır kaldırılabilir.
+PyQt6>=6.6,<7
+matplotlib>=3.8,<4

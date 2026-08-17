@@ -1,7 +1,7 @@
 """Veritabanını tamamen sıfırlar (gerçek kullanıma geçmeden önce).
 
-Demo verisini silip yalnızca varsayılan `admin` hesabıyla boş bir veritabanı
-bırakır. Mevcut veritabanı önce yedekler klasörüne kopyalanır.
+Demo verisini silip yalnızca varsayılan `admin` hesabıyla boş bir şema
+bırakır. Mevcut veriden önce pg_dump yedeği alınır.
 
 Kullanım:
     python tools/reset_db.py
@@ -9,9 +9,7 @@ Kullanım:
 """
 from __future__ import annotations
 
-import shutil
 import sys
-from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -22,37 +20,44 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from app import config  # noqa: E402
 from app.db import database as db  # noqa: E402
+from app.services import backup_service  # noqa: E402
 
 
 def main() -> int:
-    db_file = config.db_path()
+    print(f"Veritabanı: {config.database_url_safe()}")
 
-    if db_file.exists():
-        total = db.scalar("SELECT COUNT(*) FROM faults") if _has_tables() else 0
-        print(f"Mevcut veritabanı: {db_file}")
-        print(f"İçindeki arıza kaydı sayısı: {total}")
+    try:
+        total = db.scalar("SELECT COUNT(*) FROM faults")
+        users = db.scalar("SELECT COUNT(*) FROM users")
+        print(f"İçindeki arıza kaydı: {total}, kullanıcı: {users}")
+        kurulu = True
+    except Exception:
+        print("Şema henüz kurulmamış, yeni oluşturulacak.")
+        kurulu = False
 
+    if kurulu:
         if "--force" not in sys.argv:
             answer = input("\nTÜM VERİLER SİLİNECEK. Devam edilsin mi? (evet/hayir): ")
             if answer.strip().lower() not in ("evet", "e", "yes", "y"):
                 print("İşlem iptal edildi.")
                 return 1
 
-        db.close_connection()
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup = config.backups_dir() / f"sifirlama_oncesi_{stamp}.db"
-        shutil.copy2(db_file, backup)
-        print(f"Güvenlik yedeği alındı: {backup}")
+        try:
+            backup = backup_service.auto_backup(force=True)
+            print(f"Güvenlik yedeği alındı: {backup}")
+        except backup_service.BackupError as exc:
+            print(f"UYARI: güvenlik yedeği alınamadı: {exc}")
+            if "--force" not in sys.argv:
+                answer = input("Yedeksiz devam edilsin mi? (evet/hayir): ")
+                if answer.strip().lower() not in ("evet", "e", "yes", "y"):
+                    return 1
 
-        for suffix in ("", "-wal", "-shm"):
-            Path(str(db_file) + suffix).unlink(missing_ok=True)
-    else:
-        print("Mevcut bir veritabanı bulunamadı, yenisi oluşturulacak.")
+        db.drop_all()
+        print("Tablolar silindi.")
 
-    # Ek dosyaları da temizle.
-    attachments = config.attachments_dir()
+    # Ek dosyalarını da temizle.
     removed = 0
-    for file in attachments.glob("*"):
+    for file in config.attachments_dir().glob("*"):
         if file.is_file():
             file.unlink()
             removed += 1
@@ -60,17 +65,12 @@ def main() -> int:
         print(f"{removed} ek dosyası silindi.")
 
     db.init_db()
+    db.close_pool()
+
     print("\nVeritabanı sıfırlandı.")
     print("Giriş bilgileri:  admin / admin")
     print("İlk girişten sonra Ayarlar > Şifremi Değiştir menüsünden şifreyi değiştirin.")
     return 0
-
-
-def _has_tables() -> bool:
-    row = db.query_one(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='faults'"
-    )
-    return row is not None
 
 
 if __name__ == "__main__":
