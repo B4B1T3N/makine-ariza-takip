@@ -1,0 +1,1 @@
+"""Makine Arıza Takip Sistemi."""

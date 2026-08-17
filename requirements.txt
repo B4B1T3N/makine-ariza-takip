@@ -1,0 +1,9 @@
+# Makine Arıza Takip Sistemi - çalışma zamanı bağımlılıkları
+# Kurulum:  pip install -r requirements.txt
+
+PyQt6>=6.6,<7          # Masaüstü arayüz
+matplotlib>=3.8,<4     # Dashboard ve rapor grafikleri
+openpyxl>=3.1,<4       # Excel (.xlsx) dışa aktarma
+
+# Not: Veritabanı için Python'un yerleşik sqlite3 modülü kullanılır,
+# ek bir paket veya sunucu gerekmez.

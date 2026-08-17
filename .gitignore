@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# PyInstaller çıktıları
+build/
+dist/
+*.manifest
+
+# Yerel veri (asla depoya girmemeli)
+data/
+*.db
+*.db-wal
+*.db-shm
+portable.txt
+
+# Dışa aktarılan raporlar / yedekler
+*.xlsx
+*.csv
+*.zip
+
+.pytest_cache/
+.idea/
+.vscode/
