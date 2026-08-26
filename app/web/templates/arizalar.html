@@ -1,0 +1,144 @@
+{% extends "taban.html" %}
+{% block baslik %}Arızalar{% endblock %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <h1>Arıza Kayıtları</h1>
+  <a class="dugme birincil" href="/arizalar/yeni">+ Yeni Arıza</a>
+</div>
+
+<form class="filtre" method="get" action="/arizalar">
+  <div class="filtre-satir">
+    <div class="alan buyuk">
+      <label for="arama">Ara</label>
+      <input id="arama" name="arama" value="{{ secili.arama }}"
+             placeholder="Kayıt no, başlık, açıklama veya makine adı">
+    </div>
+
+    <div class="alan">
+      <label for="makine">Makine</label>
+      <select id="makine" name="makine">
+        <option value="">Tümü</option>
+        {% for m in makineler %}
+          <option value="{{ m.id }}" {% if secili.makine == m.id %}selected{% endif %}>
+            {{ m.name }}{% if not m.is_active %} (pasif){% endif %}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="alan">
+      <label for="baslangic">Başlangıç</label>
+      <input id="baslangic" name="baslangic" type="date" value="{{ secili.baslangic }}">
+    </div>
+
+    <div class="alan">
+      <label for="bitis">Bitiş</label>
+      <input id="bitis" name="bitis" type="date" value="{{ secili.bitis }}">
+    </div>
+  </div>
+
+  <div class="filtre-satir">
+    <fieldset class="kutucuklar">
+      <legend>Durum</legend>
+      {% for d in cfg.STATUSES %}
+        <label class="kutucuk">
+          <input type="checkbox" name="durum" value="{{ d }}"
+                 {% if d in secili.durum %}checked{% endif %}>
+          {{ cfg.STATUS_LABELS[d] }}
+        </label>
+      {% endfor %}
+    </fieldset>
+
+    <fieldset class="kutucuklar">
+      <legend>Öncelik</legend>
+      {% for o in cfg.PRIORITIES %}
+        <label class="kutucuk">
+          <input type="checkbox" name="oncelik" value="{{ o }}"
+                 {% if o in secili.oncelik %}checked{% endif %}>
+          {{ cfg.PRIORITY_LABELS[o] }}
+        </label>
+      {% endfor %}
+    </fieldset>
+
+    {% if kullanici.can_view_all_faults %}
+      <fieldset class="kutucuklar">
+        <legend>Kısayol</legend>
+        <label class="kutucuk">
+          <input type="checkbox" name="bana_atanan" value="1"
+                 {% if secili.bana_atanan %}checked{% endif %}>
+          Bana atananlar
+        </label>
+      </fieldset>
+    {% endif %}
+
+    <div class="filtre-dugmeler">
+      <button class="dugme birincil" type="submit">Filtrele</button>
+      <a class="dugme sade" href="/arizalar">Temizle</a>
+    </div>
+  </div>
+</form>
+
+<p class="soluk sonuc-sayisi">
+  {{ toplam }} kayıt bulundu{% if son_sayfa > 1 %} · sayfa {{ sayfa_no }}/{{ son_sayfa }}{% endif %}
+  {%- if not kullanici.can_view_all_faults %} · yalnızca sizin açtığınız kayıtlar{% endif %}
+</p>
+
+{% if kayitlar %}
+<div class="tablo-sarmal">
+  <table class="tablo">
+    <thead>
+      <tr>
+        <th>No</th>
+        <th>Başlık</th>
+        <th>Makine</th>
+        <th>Durum</th>
+        <th>Öncelik</th>
+        <th>Atanan</th>
+        <th>Arıza zamanı</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for k in kayitlar %}
+      <tr onclick="window.location='/arizalar/{{ k.id }}'">
+        <td class="mono">#{{ k.id }}</td>
+        <td><a href="/arizalar/{{ k.id }}">{{ k.title }}</a></td>
+        <td>{{ k.machine_name }}</td>
+        <td>
+          <span class="rozet" style="background: {{ cfg.STATUS_COLORS[k.status] }}">
+            {{ cfg.STATUS_LABELS[k.status] }}
+          </span>
+        </td>
+        <td>
+          <span class="rozet" style="background: {{ cfg.PRIORITY_COLORS[k.priority] }}">
+            {{ cfg.PRIORITY_LABELS[k.priority] }}
+          </span>
+        </td>
+        <td>{{ k.assignee_name or "—" }}</td>
+        <td class="mono">{{ h.fmt_datetime(k.occurred_at) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if son_sayfa > 1 %}
+<nav class="sayfalama">
+  {% set temel = request.url.remove_query_params('sayfa') %}
+  {% if sayfa_no > 1 %}
+    <a class="dugme sade" href="{{ temel.include_query_params(sayfa=sayfa_no - 1) }}">‹ Önceki</a>
+  {% endif %}
+  <span class="soluk">{{ sayfa_no }} / {{ son_sayfa }}</span>
+  {% if sayfa_no < son_sayfa %}
+    <a class="dugme sade" href="{{ temel.include_query_params(sayfa=sayfa_no + 1) }}">Sonraki ›</a>
+  {% endif %}
+</nav>
+{% endif %}
+
+{% else %}
+<div class="bos">
+  <p>Bu filtrelere uyan arıza kaydı yok.</p>
+  <a class="dugme birincil" href="/arizalar/yeni">İlk kaydı açın</a>
+</div>
+{% endif %}
+{% endblock %}

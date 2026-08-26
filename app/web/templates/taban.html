@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block baslik %}{{ cfg.APP_NAME }}{% endblock %} — {{ cfg.APP_NAME }}</title>
+  <meta name="csrf-token" content="{{ csrf }}">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+
+<div id="cevrimdisi-serit" class="serit" hidden>
+  Bağlantı yok. Girdiğiniz yeni kayıtlar cihazda saklanır, bağlantı gelince
+  otomatik gönderilir.
+</div>
+
+{% if kullanici %}
+<header class="ust">
+  <a class="marka" href="/arizalar">{{ cfg.APP_NAME }}</a>
+
+  <nav class="menu">
+    <a href="/arizalar" {% if request.url.path == '/arizalar' %}class="etkin"{% endif %}>Arızalar</a>
+    <a href="/arizalar/yeni" {% if request.url.path == '/arizalar/yeni' %}class="etkin"{% endif %}>Yeni Arıza</a>
+  </nav>
+
+  <div class="kullanici">
+    <span class="ad">{{ kullanici.full_name }}</span>
+    <span class="rozet rol">{{ kullanici.role_label }}</span>
+    <form method="post" action="/cikis">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="dugme sade" type="submit">Çıkış</button>
+    </form>
+  </div>
+</header>
+{% endif %}
+
+<main class="govde">
+  {% for b in bildirimler %}
+    <div class="uyari {{ b.tur }}" role="status">{{ b.mesaj }}</div>
+  {% endfor %}
+
+  {% block icerik %}{% endblock %}
+</main>
+
+<footer class="alt">
+  {{ cfg.APP_NAME }} v{{ cfg.APP_VERSION }} · Saat dilimi: {{ cfg.APP_TIMEZONE }}
+</footer>
+
+<script src="/static/kuyruk.js" defer></script>
+{% block betikler %}{% endblock %}
+</body>
+</html>

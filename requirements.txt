@@ -6,6 +6,13 @@ psycopg[binary]>=3.1,<4    # PostgreSQL sürücüsü
 psycopg-pool>=3.2,<4       # Bağlantı havuzu
 tzdata>=2024.1             # Windows'ta zoneinfo için IANA saat dilimi verisi
 
+# --- Web arayüzü (Faz 2) ---
+fastapi>=0.110,<1          # HTTP yönlendirme ve doğrulama
+uvicorn[standard]>=0.29,<1 # ASGI sunucusu
+jinja2>=3.1,<4             # Sunucu taraflı şablonlar
+itsdangerous>=2.1,<3       # Oturum çerezinin imzalanması
+python-multipart>=0.0.9    # HTML form gövdelerinin çözümlenmesi
+
 # --- Raporlama ---
 openpyxl>=3.1,<4           # Excel (.xlsx) dışa aktarma
 

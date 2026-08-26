@@ -9,7 +9,9 @@ performansını raporlardan izler.
 
 - **Veritabanı:** PostgreSQL 17 (yerel geliştirmede kurulu, üretimde yönetilen servis)
 - **İş mantığı:** Python — arayüzden bağımsız `app/services/` katmanı
-- **Arayüz:** şu an PyQt6 masaüstü (Faz 2–3'te web arayüzüne devredilecek)
+- **Arayüz:** web (FastAPI + Jinja2) — arıza akışı için hazır; makine
+  envanteri, kullanıcılar ve raporlar Faz 3'te web'e taşınacak, o zamana
+  kadar PyQt6 masaüstü sürüm bu ekranlar için kullanılmaya devam eder
 - **Arayüz dili:** tamamen Türkçe
 
 ---
@@ -19,14 +21,18 @@ performansını raporlardan izler.
 | Faz | Kapsam | Durum |
 |---|---|---|
 | **1** | PostgreSQL'e geçiş, saat dilimi, çevrimdışı senkron şeması, eşzamanlılık | ✅ **Tamamlandı** |
-| 2 | FastAPI + oturum, arıza listesi/oluşturma/detay, çevrimdışı kuyruk | Sırada |
-| 3 | Makine envanteri, kullanıcılar, dashboard, raporlar (web) | — |
+| **2** | FastAPI + oturum, arıza listesi/oluşturma/detay, çevrimdışı kuyruk | ✅ **Tamamlandı** |
+| 3 | Makine envanteri, kullanıcılar, dashboard, raporlar (web) | Sırada |
 | 4 | Ekleri nesne depolamaya (S3/Blob) taşıma | — |
 | 5 | Yayın: HTTPS, ortam değişkenleri, yedek doğrulaması | — |
 
 **Faz 1'in kabul kriteri:** mevcut masaüstü arayüz, tek satır değişmeden
 PostgreSQL üzerinde çalışmalı. Sağlandı — veri katmanının doğruluğu web kodu
 yazılmadan önce kanıtlandı.
+
+**Faz 2'nin kabul kriteri:** bir operatör tarayıcıdan arıza kaydı açabilmeli,
+bir teknisyen kaydı işleme alıp kapatabilmeli ve **bağlantı koptuğunda girilen
+kayıt kaybolmamalı.** Sağlandı.
 
 ---
 
@@ -56,11 +62,39 @@ pip install -r requirements.txt
 
 copy .env.example .env
 :: .env dosyasını açıp DATABASE_URL içindeki şifreyi kendi şifrenizle değiştirin
+```
 
+### 3. Web arayüzü
+
+```bat
+python web.py
+```
+
+Tarayıcıdan `http://127.0.0.1:8000` adresini açın.
+
+Atölyedeki tabletlerin de erişebilmesi için ağa açmak isterseniz:
+
+```bat
+python web.py --host 0.0.0.0
+```
+
+Geliştirirken kod değiştikçe sunucunun yeniden başlaması için `--gelistirme`
+ekleyin. Üretimde başlatıcı yerine doğrudan uvicorn çalıştırılır:
+
+```
+uvicorn app.web.main:app --host 0.0.0.0 --port 8000
+```
+
+### 4. Masaüstü arayüz (Faz 3'e kadar)
+
+Makine envanteri, kullanıcı yönetimi ve raporlar henüz web'e taşınmadı.
+O ekranlar için masaüstü sürüm aynı veritabanına karşı çalışmaya devam eder:
+
+```bat
 python run.py
 ```
 
-### 3. Demo verisi (isteğe bağlı)
+### 5. Demo verisi (isteğe bağlı)
 
 ```bat
 python tools\seed_demo.py --reset
@@ -98,8 +132,9 @@ Saat dilimi `MAT_TIMEZONE` ile değiştirilebilir.
 
 ### Çevrimdışı kayıt için üç yeni sütun
 
-İnternet kesildiğinde operatörün girdiği kayıt tarayıcıda kuyruğa alınacak ve
-bağlantı gelince gönderilecek (Faz 2). Bunun şema tarafı Faz 1'de hazırlandı:
+İnternet kesildiğinde operatörün girdiği kayıt tarayıcıda kuyruğa alınır ve
+bağlantı gelince gönderilir. Şema tarafı Faz 1'de hazırlandı, arayüz tarafı
+Faz 2'de bağlandı:
 
 | Sütun | Ne işe yarıyor |
 |---|---|
@@ -125,6 +160,95 @@ o çift yönlü senkronizasyon demektir ve ayrı bir çakışma çözümü gerek
 `app/db/database.py` artık psycopg3 bağlantı havuzu kullanır. `db.transaction()`
 bloğu içindeki tüm sorgular aynı bağlantıya katılır (contextvars ile), böylece
 "durum değişikliği + geçmiş kaydı + bildirim" ya birlikte yazılır ya hiç.
+
+---
+
+## Faz 2'de ne geldi
+
+Web arayüzü **sunucu taraflı** çalışır: sayfa HTML olarak sunucuda üretilir,
+tarayıcıya derlenmiş bir uygulama indirilmez. npm ve derleme adımı yoktur;
+JavaScript yalnızca çevrimdışı kuyruk için kullanılır. Atölye tabletinde
+sayfanın hızlı açılması ve tek dille (Python) bakılabilmesi bu yüzden seçildi.
+
+### Oturum
+
+Oturum, imzalı bir çerezde taşınır ve içinde **yalnızca kullanıcı kimliği**
+vardır. Rol ve aktiflik her istekte veritabanından okunur — aksi halde pasife
+alınan bir kullanıcı, çerezi geçerli olduğu sürece çalışmaya devam ederdi.
+
+| Önlem | Ne yapar |
+|---|---|
+| Çerez ömrü 12 saat | Ortak tablette açık kalan oturumu bir vardiyayla sınırlar |
+| `SameSite=Lax` | Formun başka bir siteden gönderilmesini engeller |
+| Oturum başına CSRF imzası | Formlarda gizli alan, JSON isteklerinde `X-CSRF-Token` başlığı |
+| Girişte oturum tazeleme | Giriş öncesi ele geçirilmiş bir çerez giriş sonrası geçersiz olur |
+| `devam` adresinin doğrulanması | Giriş sonrası dış siteye yönlendirme (open redirect) kapatıldı |
+
+İmzalama anahtarı `MAT_SECRET_KEY` ile verilir. Verilmezse üretilip
+veritabanına yazılır; böylece sunucu yeniden başladığında herkesin oturumu
+düşmez ve birden çok uygulama örneği aynı anahtarı paylaşır. **Üretimde
+`MAT_SECRET_KEY` tanımlayın** — o zaman anahtar veritabanı yedeklerinin içinde
+dolaşmaz.
+
+### Yetkiler sorgunun içinde
+
+Operatörün yalnızca kendi kayıtlarını görmesi, ekranda alan gizleyerek değil
+**sorgunun kendisiyle** sağlanır; adres çubuğundan başka bir kaydın numarası
+yazılarak aşılamaz. Görme yetkisi olmayan kayıt ile var olmayan kayıt aynı
+yanıtı verir, yoksa numara deneyerek hangi kayıtların var olduğu öğrenilebilirdi.
+
+### İyimser kilitleme arayüze bağlandı
+
+Detay sayfası, kaydın `version` değerini gizli alanda taşır. İki teknisyen aynı
+kaydı açıp ikisi de değiştirmeye kalkarsa ikincisi *"Bu kayıt siz görüntülerken
+başka biri tarafından değiştirildi"* uyarısı alır; sessizce üzerine yazılmaz.
+Faz 1'de hazırlanan sütunun karşılığı budur.
+
+### Çevrimdışı kuyruk
+
+Korunan senaryo: **operatör arızayı yazarken bağlantı kopuyor.**
+
+1. Form gönderimi tarayıcıda yakalanır ve `/api/arizalar` uç noktasına gönderilir.
+2. Ağ hatası alınırsa kayıt, istemcinin ürettiği `client_uuid` ile birlikte
+   tarayıcının IndexedDB deposuna yazılır ve kullanıcıya "kayıt cihazınıza
+   alındı" denir.
+3. Bağlantı gelince kuyruk otomatik boşaltılır. Sunucu aynı `client_uuid` ile
+   ikinci kez çağrılırsa **yeni kayıt açmaz**, mevcut kaydın numarasını döner.
+4. Arızanın zamanı, gönderim anı değil **cihazda yazıldığı an**dır. Kayıt
+   kuyrukta saatlerce beklese bile çözüm süresi doğru hesaplanır.
+
+`navigator.onLine` bilerek tek ölçüt olarak kullanılmaz: fabrika kablosuzuna
+bağlı bir tablet "çevrimiçi" görünür ama sunucuya erişemiyor olabilir. Bu
+yüzden gönderim her zaman denenir, kuyruğa düşme kararı gerçek ağ hatasına
+bakılarak verilir.
+
+Kuyruğun konuştuğu uçlar oturum yoksa **giriş sayfasına yönlendirmez, 401
+döner** — yönlendirme 200 olarak görünür ve kuyruk kaydı gönderilmiş sanıp
+silerdi. Aynı nedenle kimlik kontrolü, gövde doğrulamasından önce çalışacak
+şekilde bağımlılığa taşındı.
+
+### Service worker
+
+Yalnızca "Yeni Arıza" sayfası ve statik dosyalar önbelleğe alınır. **Arıza
+listesi ve detay sayfaları bilerek önbelleğe alınmaz:** bayat bir liste,
+teknisyene kaydın gerçek durumunu yanlış gösterir ve bu, sayfanın hiç
+açılmamasından daha kötüdür. Ağ yokken diğer sayfalar `/cevrimdisi`
+açıklama sayfasına düşer.
+
+> **HTTPS gereği:** service worker ve `crypto.randomUUID` yalnızca güvenli
+> bağlamda (HTTPS veya `localhost`) çalışır. Düz `http://` ile LAN'da
+> sunulduğunda kuyruk çalışmaya devam eder ama sayfanın kendisi çevrimdışı
+> açılmaz. Faz 5'te HTTPS geldiğinde bu kısıt kalkar.
+
+### Web arayüzünde henüz olmayanlar
+
+| Eksik | Nerede |
+|---|---|
+| Makine envanteri, kullanıcı yönetimi, dashboard, raporlar | Faz 3 |
+| Ek dosyası **yükleme** (görüntüleme ve indirme var) | Faz 4 — dosyalar nesne depolamaya taşınırken |
+| Şifre değiştirme ekranı, bildirim listesi | Faz 3 |
+
+Bu ekranlar için masaüstü sürüm aynı veritabanına karşı çalışmaya devam eder.
 
 ---
 
@@ -221,7 +345,8 @@ Ek dosyaları ve yedekler `Belgeler\MakineArizaTakip\` altındadır
 
 ```
 makine-ariza-takip/
-├── run.py                      Başlatıcı
+├── web.py                      Web sunucusu başlatıcısı  ← Faz 2
+├── run.py                      Masaüstü başlatıcı
 ├── .env.example                Ortam değişkeni şablonu (.env gitignore'da)
 ├── requirements.txt
 │
@@ -241,13 +366,26 @@ makine-ariza-takip/
 │   │   ├── report_service.py   Rapor sorguları
 │   │   └── backup_service.py   pg_dump / pg_restore
 │   │
+│   ├── web/                    Web arayüzü  ← Faz 2
+│   │   ├── main.py             FastAPI uygulaması, oturum, hata sayfaları
+│   │   ├── deps.py             Oturum, mevcut kullanıcı, yetki, CSRF
+│   │   ├── routes/
+│   │   │   ├── auth.py         /giris  /cikis
+│   │   │   ├── faults.py       /arizalar  /arizalar/yeni  /arizalar/{id}
+│   │   │   └── api.py          /api/arizalar — çevrimdışı kuyruğun ucu
+│   │   ├── templates/          Jinja2 şablonları (Türkçe)
+│   │   └── static/
+│   │       ├── app.css
+│   │       ├── kuyruk.js       IndexedDB çevrimdışı kuyruk
+│   │       └── sw.js           Service worker
+│   │
 │   ├── ui/                     PyQt6 ekranları (Faz 3'te web devralacak)
 │   └── utils/
 │       ├── security.py         PBKDF2 şifre saklama
 │       ├── helpers.py          UTC ↔ yerel saat dönüşümleri
 │       └── export.py           Excel / CSV
 │
-├── tests/                      76 test
+├── tests/                      108 test
 └── tools/
     ├── seed_demo.py            Demo verisi
     ├── reset_db.py             Sıfırlama (önce yedek alır)
@@ -255,7 +393,10 @@ makine-ariza-takip/
 ```
 
 **Mimari not:** arayüz doğrudan SQL çalıştırmaz. Tüm iş kuralları
-`app/services/` altındadır — web arayüzü bu katmanı olduğu gibi kullanacak.
+`app/services/` altındadır. Faz 2 bunu doğruladı: web arayüzü servis katmanını
+olduğu gibi kullandı, tek eklenen şey liste sayfalaması için `limit`/`offset`
+oldu. `app/web/` altında iş kuralı yoktur — yalnızca HTTP taşıması, oturum ve
+şablon üretimi.
 
 ---
 
@@ -287,25 +428,37 @@ PBKDF2-HMAC-SHA256 (200.000 tur). Sadece standart kütüphane kullanılır.
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-76 test. Her test izole bir test veritabanı kullanır ve şemayı sıfırdan kurar;
+108 test. Her test izole bir test veritabanı kullanır ve şemayı sıfırdan kurar;
 `TEST_DATABASE_URL` adında "test" geçmiyorsa çalışmayı reddeder — üretim
 veritabanının yanlışlıkla silinmesini önlemek için.
 
 Kapsam: kimlik doğrulama ve yetkiler, tam durum akışı ve geçersiz geçişlerin
 reddi, kayıt geçmişi, tüm filtreler, envanter koruma kuralları, bildirimler,
-rapor sorguları, Excel/CSV çıktısı, yedekleme/geri yükleme; ayrıca Faz 1'in
-yeni davranışları: çevrimdışı idempotency, cihaz saati/sunucu saati ayrımı,
+rapor sorguları, Excel/CSV çıktısı, yedekleme/geri yükleme; Faz 1'in
+davranışları: çevrimdışı idempotency, cihaz saati/sunucu saati ayrımı,
 iyimser kilitleme, saat dilimi gün sınırları.
+
+Faz 2 ile gelen 32 web testi: oturum açma/kapatma, pasife alınan kullanıcının
+oturumunun düşmesi, CSRF reddi, dış siteye yönlendirmenin engellenmesi,
+operatörün başkasının kaydına adres çubuğundan erişememesi, filtreler ve
+sayfalama, rol bazlı işlem yetkileri, eşzamanlı düzenlemenin reddi ve
+çevrimdışı kuyruğun sözleri (aynı `client_uuid` ikinci kayıt açmaz, arıza
+zamanı gönderim anına kaymaz, oturumsuz istek yönlendirilmeyip 401 alır).
 
 ---
 
 ## Bilinen kısıtlar
 
-- **Ekler hâlâ yerel diskte.** Faz 4'e kadar sunucuda kalıcı disk gerekir.
-- **Oturum yönetimi yok.** `CurrentUser` bellekte bir nesne; web için oturum
-  çerezi Faz 2'de gelecek.
+- **Ekler hâlâ yerel diskte.** Faz 4'e kadar sunucuda kalıcı disk gerekir;
+  web arayüzünden yükleme de o zaman gelecek.
+- **Web arayüzü henüz arıza akışını kapsar.** Envanter, kullanıcılar, dashboard
+  ve raporlar Faz 3'e kadar masaüstü sürümdedir.
 - **Şifre karmaşıklık kuralı yok** — sadece en az 4 karakter.
 - **Hesap kilitleme yok.** Sınırsız şifre denemesi yapılabilir; PBKDF2'nin
-  yavaşlığı kısmi koruma sağlar ama gerçek bir önlem değildir.
-- **İnternet kesintisi** — fabrika interneti güvenilir kabul edildi. Çevrimdışı
-  koruma yalnızca yeni kayıt girişi içindir (bkz. yukarıdaki kapsam notu).
+  yavaşlığı kısmi koruma sağlar ama gerçek bir önlem değildir. Web arayüzü bu
+  yüzeyi internete açtığı için Faz 5'ten önce hız sınırlaması eklenmelidir.
+- **HTTPS yok.** Oturum çerezi `https_only=False` ile gönderilir; Faz 5'te
+  HTTPS arkasına alınınca `True` yapılmalıdır. Service worker de ancak o zaman
+  çalışır (bkz. Faz 2 notu).
+- **Çevrimdışı koruma yalnızca yeni kayıt girişi içindir.** Listeyi çevrimdışı
+  görüntüleme ve durum değiştirme kapsam dışıdır (bkz. yukarıdaki kapsam notu).

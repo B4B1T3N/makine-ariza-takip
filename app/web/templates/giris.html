@@ -1,0 +1,34 @@
+{% extends "taban.html" %}
+{% block baslik %}Giriş{% endblock %}
+
+{% block icerik %}
+<div class="giris-kutu">
+  <h1>{{ cfg.APP_NAME }}</h1>
+  <p class="soluk">Devam etmek için giriş yapın.</p>
+
+  {% if hata %}
+    <div class="uyari hata" role="alert">{{ hata }}</div>
+  {% endif %}
+
+  {% if varsayilan_admin %}
+    <div class="uyari uyari-tonu">
+      İlk kurulum: kullanıcı adı <strong>admin</strong>, şifre <strong>admin</strong>.
+      Giriş yaptıktan sonra şifreyi değiştirin.
+    </div>
+  {% endif %}
+
+  <form method="post" action="/giris" class="dikey">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="devam" value="{{ devam or '' }}">
+
+    <label for="kullanici_adi">Kullanıcı adı</label>
+    <input id="kullanici_adi" name="kullanici_adi" value="{{ kullanici_adi or '' }}"
+           autocomplete="username" autofocus required>
+
+    <label for="sifre">Şifre</label>
+    <input id="sifre" name="sifre" type="password" autocomplete="current-password" required>
+
+    <button class="dugme birincil" type="submit">Giriş yap</button>
+  </form>
+</div>
+{% endblock %}

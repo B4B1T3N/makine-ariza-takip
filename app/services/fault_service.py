@@ -40,7 +40,7 @@ _LOCAL_DAY = f"(f.occurred_at AT TIME ZONE '{config.APP_TIMEZONE}')::date"
 
 
 # --- Sorgulama ------------------------------------------------------------
-def list_faults(
+def _filtre(
     search: str = "",
     machine_id: int | None = None,
     statuses: list[str] | None = None,
@@ -50,9 +50,9 @@ def list_faults(
     reporter_id: int | None = None,
     assignee_id: int | None = None,
     only_active: bool = False,
-) -> list[dict]:
-    """Filtrelenmiş arıza listesi. Tarihler 'YYYY-MM-DD' formatında beklenir."""
-    sql = _FAULT_SELECT + " WHERE TRUE"
+) -> tuple[str, list]:
+    """Ortak WHERE koşulu. Liste ve sayım aynı filtreyi kullanmalıdır."""
+    sql = " WHERE TRUE"
     params: list = []
 
     if search:
@@ -85,12 +85,65 @@ def list_faults(
         sql += " AND f.assignee_id = %s"
         params.append(assignee_id)
 
-    sql += """ ORDER BY
+    return sql, params
+
+
+# Açık kayıtlar üstte, içlerinde en acil olan başta, eşitlikte en yeni önce.
+_SIRALAMA = """ ORDER BY
         CASE WHEN f.status IN ('cozuldu', 'kapatildi') THEN 1 ELSE 0 END,
         CASE f.priority WHEN 'acil' THEN 0 WHEN 'yuksek' THEN 1
                         WHEN 'orta' THEN 2 ELSE 3 END,
-        f.occurred_at DESC"""
+        f.occurred_at DESC, f.id DESC"""
+
+
+def list_faults(
+    search: str = "",
+    machine_id: int | None = None,
+    statuses: list[str] | None = None,
+    priorities: list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    reporter_id: int | None = None,
+    assignee_id: int | None = None,
+    only_active: bool = False,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict]:
+    """Filtrelenmiş arıza listesi. Tarihler 'YYYY-MM-DD' formatında beklenir.
+
+    `limit`/`offset` web arayüzünün sayfalaması içindir; verilmezse tüm sonuç
+    döner (masaüstü arayüz böyle çağırır).
+    """
+    where, params = _filtre(
+        search, machine_id, statuses, priorities, date_from, date_to,
+        reporter_id, assignee_id, only_active,
+    )
+    sql = _FAULT_SELECT + where + _SIRALAMA
+    if limit is not None:
+        sql += " LIMIT %s OFFSET %s"
+        params += [limit, max(0, offset)]
     return db.query(sql, tuple(params))
+
+
+def count_faults(
+    search: str = "",
+    machine_id: int | None = None,
+    statuses: list[str] | None = None,
+    priorities: list[str] | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    reporter_id: int | None = None,
+    assignee_id: int | None = None,
+    only_active: bool = False,
+) -> int:
+    """Aynı filtreye uyan toplam kayıt sayısı (sayfalama için)."""
+    where, params = _filtre(
+        search, machine_id, statuses, priorities, date_from, date_to,
+        reporter_id, assignee_id, only_active,
+    )
+    sql = """SELECT COUNT(*) FROM faults f
+               JOIN machines m ON m.id = f.machine_id""" + where
+    return db.scalar(sql, tuple(params))
 
 
 def get_fault(fault_id: int) -> dict | None:

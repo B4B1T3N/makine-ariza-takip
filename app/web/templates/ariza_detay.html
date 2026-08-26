@@ -1,0 +1,212 @@
+{% extends "taban.html" %}
+{% block baslik %}Arıza #{{ ariza.id }}{% endblock %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <div>
+    <p class="soluk mono">Kayıt #{{ ariza.id }}</p>
+    <h1>{{ ariza.title }}</h1>
+    <p>
+      <span class="rozet" style="background: {{ cfg.STATUS_COLORS[ariza.status] }}">
+        {{ cfg.STATUS_LABELS[ariza.status] }}
+      </span>
+      <span class="rozet" style="background: {{ cfg.PRIORITY_COLORS[ariza.priority] }}">
+        {{ cfg.PRIORITY_LABELS[ariza.priority] }}
+      </span>
+    </p>
+  </div>
+  <a class="dugme sade" href="/arizalar">← Listeye dön</a>
+</div>
+
+<div class="ikili">
+  <!-- Sol sütun: kayıt bilgileri ve geçmiş -->
+  <section>
+    <div class="kart">
+      <h2>Kayıt bilgileri</h2>
+      <dl class="kunye">
+        <dt>Makine</dt>
+        <dd>{{ ariza.machine_name }}
+          {% if ariza.machine_location %}<span class="soluk">— {{ ariza.machine_location }}</span>{% endif %}
+        </dd>
+
+        <dt>Seri no</dt>
+        <dd>{{ ariza.machine_serial or "—" }}</dd>
+
+        <dt>Kaydı açan</dt>
+        <dd>{{ ariza.reporter_name }}</dd>
+
+        <dt>Atanan</dt>
+        <dd>{{ ariza.assignee_name or "Atanmamış" }}</dd>
+
+        <dt>Arıza zamanı</dt>
+        <dd>{{ h.fmt_datetime(ariza.occurred_at) }}</dd>
+
+        <dt>Sisteme kayıt</dt>
+        <dd>{{ h.fmt_datetime(ariza.created_at) }}
+          {% if h.hours_between(ariza.occurred_at, ariza.created_at) > 0.05 %}
+            <span class="soluk kucuk">(çevrimdışı girilmiş, gecikmeli ulaşmış)</span>
+          {% endif %}
+        </dd>
+
+        {% if ariza.resolved_at %}
+          <dt>Çözüm</dt>
+          <dd>{{ h.fmt_datetime(ariza.resolved_at) }}
+            <span class="soluk">
+              ({{ h.humanize_duration(h.hours_between(ariza.occurred_at, ariza.resolved_at)) }})
+            </span>
+          </dd>
+        {% endif %}
+
+        {% if ariza.closed_at %}
+          <dt>Kapatılma</dt>
+          <dd>{{ h.fmt_datetime(ariza.closed_at) }}</dd>
+        {% endif %}
+      </dl>
+
+      {% if ariza.description %}
+        <h3>Açıklama</h3>
+        <p class="aciklama">{{ ariza.description }}</p>
+      {% endif %}
+    </div>
+
+    {% if ekler %}
+    <div class="kart">
+      <h2>Ekler</h2>
+      <ul class="ek-listesi">
+        {% for e in ekler %}
+          <li>
+            <a href="/ekler/{{ e.id }}">{{ e.file_name }}</a>
+            <span class="soluk kucuk">
+              {{ e.uploader_name or "—" }} · {{ h.fmt_datetime(e.created_at) }}
+            </span>
+          </li>
+        {% endfor %}
+      </ul>
+      <p class="soluk kucuk">Dosya yükleme web arayüzüne Faz 4'te eklenecek.</p>
+    </div>
+    {% endif %}
+
+    <div class="kart">
+      <h2>Geçmiş</h2>
+      <ol class="zaman-cizgisi">
+        {% for g in gecmis %}
+          <li>
+            <div class="zaman-bas">
+              <strong>{{ cfg.LOG_LABELS.get(g.action, g.action) }}</strong>
+              <span class="soluk kucuk">
+                {{ g.user_name or "Silinmiş kullanıcı" }} · {{ h.fmt_datetime(g.created_at) }}
+              </span>
+            </div>
+            {% if g.action == cfg.LOG_STATUS %}
+              <p class="gecis">
+                {{ cfg.STATUS_LABELS.get(g.old_value, g.old_value or "—") }}
+                →
+                {{ cfg.STATUS_LABELS.get(g.new_value, g.new_value) }}
+              </p>
+            {% endif %}
+            {% if g.note %}
+              <p class="not">{{ g.note }}</p>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+    </div>
+  </section>
+
+  <!-- Sağ sütun: işlemler -->
+  <aside>
+    {% if kullanici.can_change_status %}
+      <div class="kart">
+        <h2>Durum</h2>
+        {% if gecisler %}
+          <form method="post" action="/arizalar/{{ ariza.id }}/durum" class="dikey">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <input type="hidden" name="surum" value="{{ ariza.version }}">
+
+            <label for="yeni_durum">Yeni durum</label>
+            <select id="yeni_durum" name="yeni_durum" required>
+              {% for d in gecisler %}
+                <option value="{{ d }}">{{ cfg.STATUS_LABELS[d] }}</option>
+              {% endfor %}
+            </select>
+
+            <label for="durum_aciklama">Açıklama</label>
+            <textarea id="durum_aciklama" name="aciklama" rows="3"
+                      placeholder="Çözüldü ve Kapatıldı için zorunludur"></textarea>
+
+            <button class="dugme birincil" type="submit">Durumu güncelle</button>
+          </form>
+        {% else %}
+          <p class="soluk">Bu kayıt kapatıldı; başka durum geçişi yok.</p>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {% if kullanici.can_assign %}
+      <div class="kart">
+        <h2>Atama</h2>
+        <form method="post" action="/arizalar/{{ ariza.id }}/atama" class="dikey">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <label for="teknisyen_id">Sorumlu</label>
+          <select id="teknisyen_id" name="teknisyen_id">
+            <option value="">Atanmamış</option>
+            {% for t in teknisyenler %}
+              <option value="{{ t.id }}" {% if ariza.assignee_id == t.id %}selected{% endif %}>
+                {{ t.full_name }} ({{ cfg.ROLE_LABELS[t.role] }})
+              </option>
+            {% endfor %}
+          </select>
+          <button class="dugme" type="submit">Atamayı kaydet</button>
+        </form>
+      </div>
+    {% endif %}
+
+    <div class="kart">
+      <h2>Not ekle</h2>
+      <form method="post" action="/arizalar/{{ ariza.id }}/not" class="dikey">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="notu" class="gizli-etiket">Not</label>
+        <textarea id="notu" name="notu" rows="4" required
+                  placeholder="Gözlem, yapılan işlem, beklenen parça..."></textarea>
+        <button class="dugme" type="submit">Notu ekle</button>
+      </form>
+    </div>
+
+    {% if duzenlenebilir %}
+      <details class="kart">
+        <summary><h2>Kaydı düzenle</h2></summary>
+        <form method="post" action="/arizalar/{{ ariza.id }}/duzenle" class="dikey">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="surum" value="{{ ariza.version }}">
+
+          <label for="d_makine">Makine</label>
+          <select id="d_makine" name="makine_id">
+            {% for m in makineler %}
+              <option value="{{ m.id }}" {% if ariza.machine_id == m.id %}selected{% endif %}>
+                {{ m.name }}
+              </option>
+            {% endfor %}
+          </select>
+
+          <label for="d_baslik">Başlık</label>
+          <input id="d_baslik" name="baslik" value="{{ ariza.title }}" maxlength="300" required>
+
+          <label for="d_aciklama">Açıklama</label>
+          <textarea id="d_aciklama" name="aciklama" rows="5">{{ ariza.description or '' }}</textarea>
+
+          <label for="d_oncelik">Öncelik</label>
+          <select id="d_oncelik" name="oncelik">
+            {% for o in cfg.PRIORITIES %}
+              <option value="{{ o }}" {% if ariza.priority == o %}selected{% endif %}>
+                {{ cfg.PRIORITY_LABELS[o] }}
+              </option>
+            {% endfor %}
+          </select>
+
+          <button class="dugme" type="submit">Değişiklikleri kaydet</button>
+        </form>
+      </details>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

@@ -4,3 +4,4 @@
 pyinstaller>=6.3        # Tek dosya .exe üretimi
 pytest>=8.0             # Test paketi
 pyflakes>=3.2           # Basit statik kontrol
+httpx>=0.27             # FastAPI TestClient'ın HTTP istemcisi

@@ -1,0 +1,19 @@
+{% extends "taban.html" %}
+{% block baslik %}Bağlantı yok{% endblock %}
+
+{% block icerik %}
+<div class="bos">
+  <h1>Bağlantı kurulamadı</h1>
+  <p class="soluk">
+    Bu sayfa sunucuya erişim gerektiriyor. Bağlantı gelince yeniden deneyin.
+  </p>
+  <p>
+    Çevrimdışıyken de <strong>yeni arıza kaydı açabilirsiniz</strong>; kayıt
+    cihazınızda saklanır ve bağlantı gelince otomatik gönderilir.
+  </p>
+  <p class="form-dugmeler" style="justify-content: center">
+    <a class="dugme birincil" href="/arizalar/yeni">Yeni arıza kaydı aç</a>
+    <a class="dugme sade" href="/arizalar">Yeniden dene</a>
+  </p>
+</div>
+{% endblock %}

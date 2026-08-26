@@ -1,0 +1,13 @@
+{% extends "taban.html" %}
+{% block baslik %}{{ baslik }}{% endblock %}
+
+{% block icerik %}
+<div class="bos">
+  <p class="hata-kodu">{{ kod }}</p>
+  <h1>{{ baslik }}</h1>
+  <p class="soluk">{{ mesaj }}</p>
+  <a class="dugme birincil" href="{% if kullanici %}/arizalar{% else %}/giris{% endif %}">
+    {% if kullanici %}Arıza listesine dön{% else %}Giriş sayfasına dön{% endif %}
+  </a>
+</div>
+{% endblock %}

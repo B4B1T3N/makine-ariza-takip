@@ -1,0 +1,57 @@
+{% extends "taban.html" %}
+{% block baslik %}Yeni Arıza{% endblock %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <h1>Yeni Arıza Kaydı</h1>
+  <a class="dugme sade" href="/arizalar">← Listeye dön</a>
+</div>
+
+{% if hata %}
+  <div class="uyari hata" role="alert">{{ hata }}</div>
+{% endif %}
+
+<div id="kuyruk-bilgisi" class="uyari uyari-tonu" hidden></div>
+
+<form method="post" action="/arizalar/yeni" class="kart dikey" id="ariza-formu">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+
+  <label for="makine_id">Makine <span class="zorunlu">*</span></label>
+  <select id="makine_id" name="makine_id" required>
+    <option value="">— Makine seçin —</option>
+    {% for m in makineler %}
+      <option value="{{ m.id }}" {% if girilen.makine_id == m.id %}selected{% endif %}>
+        {{ m.name }}{% if m.location %} — {{ m.location }}{% endif %}
+      </option>
+    {% endfor %}
+  </select>
+
+  <label for="baslik">Arıza başlığı <span class="zorunlu">*</span></label>
+  <input id="baslik" name="baslik" value="{{ girilen.baslik or '' }}"
+         placeholder="Kısa ve açık bir özet" maxlength="300" required>
+
+  <label for="aciklama">Açıklama</label>
+  <textarea id="aciklama" name="aciklama" rows="6"
+            placeholder="Ne oldu, ne zaman fark edildi, hangi belirtiler var?">{{ girilen.aciklama or '' }}</textarea>
+
+  <label for="oncelik">Öncelik</label>
+  <select id="oncelik" name="oncelik">
+    {% for o in cfg.PRIORITIES %}
+      <option value="{{ o }}"
+        {% if (girilen.oncelik or cfg.PRIORITY_MEDIUM) == o %}selected{% endif %}>
+        {{ cfg.PRIORITY_LABELS[o] }}
+      </option>
+    {% endfor %}
+  </select>
+
+  <div class="form-dugmeler">
+    <button class="dugme birincil" type="submit">Kaydı aç</button>
+    <a class="dugme sade" href="/arizalar">Vazgeç</a>
+  </div>
+
+  <p class="soluk kucuk">
+    Bağlantı kopuksa kayıt cihazınızda saklanır ve bağlantı gelince otomatik
+    gönderilir. Arızanın zamanı, gönderim anı değil <strong>şu an</strong> olarak kaydedilir.
+  </p>
+</form>
+{% endblock %}
