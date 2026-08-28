@@ -119,7 +119,7 @@ def test_baska_siteye_yonlendirme_engellenir(istemci, users):
         },
         follow_redirects=False,
     )
-    assert yanit.headers["location"] == "/arizalar"
+    assert yanit.headers["location"] == "/panel"
 
 
 def test_pasife_alinan_kullanicinin_oturumu_duser(istemci, users):

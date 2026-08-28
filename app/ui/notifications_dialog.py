@@ -119,7 +119,7 @@ class NotificationsDialog(QDialog):
         if not data:
             return
 
-        notification_service.mark_read(data["id"])
+        notification_service.mark_read(data["id"], self.user.id)
         if data["fault_id"]:
             self.open_fault_requested.emit(data["fault_id"])
             self.accept()

@@ -13,7 +13,16 @@ from starlette.middleware.sessions import SessionMiddleware
 from app import config
 from app.db import database as db
 from app.web import deps
-from app.web.routes import api, auth, faults
+from app.web.routes import (
+    api,
+    auth,
+    dashboard,
+    faults,
+    machines,
+    notifications,
+    reports,
+    users,
+)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -88,14 +97,19 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(auth.router)
+    app.include_router(dashboard.router)
     app.include_router(faults.router)
+    app.include_router(machines.router)
+    app.include_router(users.router)
+    app.include_router(notifications.router)
+    app.include_router(reports.router)
     app.include_router(api.router)
 
     _hata_sayfalari(app)
 
     @app.get("/", include_in_schema=False)
     def kok():
-        return RedirectResponse("/arizalar", status_code=303)
+        return RedirectResponse("/panel", status_code=303)
 
     @app.get("/saglik", include_in_schema=False)
     def saglik():

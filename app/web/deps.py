@@ -15,6 +15,7 @@ from fastapi.templating import Jinja2Templates
 
 from app import config
 from app.db import database as db
+from app.services import notification_service
 from app.services.auth_service import CurrentUser
 from app.utils import helpers
 
@@ -29,7 +30,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 class GirisGerekli(Exception):
     """Oturum yok — tarayıcı giriş sayfasına yönlendirilir."""
 
-    def __init__(self, next_url: str = "/arizalar") -> None:
+    def __init__(self, next_url: str = "/panel") -> None:
         self.next_url = next_url
 
 
@@ -137,11 +138,16 @@ def sayfa(
     durum_kodu: int = 200,
 ):
     """Şablonu ortak değişkenlerle birlikte oluşturur."""
+    user = mevcut_kullanici(request)
     veri: dict[str, Any] = {
         "request": request,
-        "kullanici": mevcut_kullanici(request),
+        "kullanici": user,
         "csrf": csrf_token(request),
+        # Yönlendirmeden sonra bir kez gösterilen ekran mesajları. Uygulama
+        # içi bildirimlerle karıştırılmamalıdır; onlar `okunmamis` sayısıyla
+        # üst menüde durur.
         "bildirimler": bildirimleri_al(request),
+        "okunmamis": notification_service.unread_count(user.id) if user else 0,
         "cfg": config,
         "h": helpers,
     }

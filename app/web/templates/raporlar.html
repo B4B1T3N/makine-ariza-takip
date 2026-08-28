@@ -1,0 +1,151 @@
+{% extends "taban.html" %}
+{% block baslik %}Raporlar{% endblock %}
+
+{% macro indirme_dugmeleri(anahtar) -%}
+{% set adres = '/raporlar/disa-aktar?rapor=' ~ anahtar
+   ~ '&donem=' ~ secili.donem ~ '&baslangic=' ~ secili.baslangic
+   ~ '&bitis=' ~ secili.bitis ~ '&grup=' ~ secili.grup %}
+<span class="indirme">
+  <a class="dugme sade" href="{{ adres }}&bicim=xlsx">Excel</a>
+  <a class="dugme sade" href="{{ adres }}&bicim=csv">CSV</a>
+</span>
+{%- endmacro %}
+
+{% macro rapor_tablosu(anahtar, veri) -%}
+{% set baslik, sutunlar, satirlar = veri %}
+<div class="kart">
+  <div class="sayfa-basi">
+    <h2>{{ baslik }}</h2>
+    {{ indirme_dugmeleri(anahtar) }}
+  </div>
+
+  {% if satirlar %}
+  <div class="tablo-sarmal">
+    <table class="tablo dokunmasiz">
+      <thead>
+        <tr>{% for s in sutunlar %}<th>{{ s }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for satir in satirlar %}
+          <tr>
+            {% for hucre in satir %}
+              <td {% if not loop.first %}class="mono"{% endif %}>{{ hucre }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <p class="soluk">Bu dönemde veri yok.</p>
+  {% endif %}
+</div>
+{%- endmacro %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <div>
+    <h1>Raporlar</h1>
+    <p class="soluk">
+      {{ h.fmt_date(secili.baslangic) }} — {{ h.fmt_date(secili.bitis) }}
+      · gruplama: {% for a, e in gruplar %}{% if a == secili.grup %}{{ e }}{% endif %}{% endfor %}
+    </p>
+  </div>
+</div>
+
+<form class="filtre" method="get" action="/raporlar">
+  <div class="filtre-satir">
+    <div class="alan">
+      <label for="donem">Dönem</label>
+      <select id="donem" name="donem">
+        {% for anahtar, etiket, _gun in donemler %}
+          <option value="{{ anahtar }}" {% if secili.donem == anahtar %}selected{% endif %}>
+            {{ etiket }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="alan">
+      <label for="baslangic">Başlangıç</label>
+      <input id="baslangic" name="baslangic" type="date" value="{{ secili.baslangic }}">
+    </div>
+
+    <div class="alan">
+      <label for="bitis">Bitiş</label>
+      <input id="bitis" name="bitis" type="date" value="{{ secili.bitis }}">
+    </div>
+
+    <div class="alan">
+      <label for="grup">Gruplama</label>
+      <select id="grup" name="grup">
+        {% for anahtar, etiket in gruplar %}
+          <option value="{{ anahtar }}" {% if secili.grup == anahtar %}selected{% endif %}>
+            {{ etiket }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="filtre-dugmeler">
+      <button class="dugme birincil" type="submit">Uygula</button>
+      <a class="dugme sade" href="/raporlar">Sıfırla</a>
+    </div>
+  </div>
+
+  <p class="soluk kucuk">
+    Tarih alanları yalnızca <strong>Özel aralık</strong> seçildiğinde dikkate
+    alınır; hazır dönemlerde aralık bugüne göre hesaplanır.
+  </p>
+</form>
+
+<div class="ikili esit">
+  <div class="kart">
+    <h2>Dönem özeti</h2>
+    <dl class="kunye">
+      {% for d in cfg.STATUSES %}
+        <dt>{{ cfg.STATUS_LABELS[d] }}</dt>
+        <dd class="mono">{{ durumlar[d] }}</dd>
+      {% endfor %}
+      <dt>Ortalama çözüm</dt>
+      <dd>{{ h.humanize_duration(ortalama_cozum) }}</dd>
+    </dl>
+  </div>
+
+  <div class="kart">
+    <div class="sayfa-basi">
+      <h2>Arıza trendi</h2>
+      {{ indirme_dugmeleri('trend') }}
+    </div>
+
+    <p class="soluk kucuk gosterge">
+      <span class="nokta" style="background: {{ cfg.STATUS_COLORS[cfg.STATUS_OPEN] }}"></span> Açılan
+      <span class="nokta" style="background: {{ cfg.STATUS_COLORS[cfg.STATUS_RESOLVED] }}"></span> Çözülen/kapanan
+    </p>
+
+    <ul class="cubuk-grafik trend">
+      {% for t in trend_cubuklari %}
+        <li>
+          <span class="cubuk-etiket">{{ t.etiket }}</span>
+          <span class="cubuk-yol ikili-cubuk">
+            <span class="cubuk-dolgu" style="width: {{ '%.1f' | format(t.acilan_oran) }}%; background: {{ cfg.STATUS_COLORS[cfg.STATUS_OPEN] }}"></span>
+            <span class="cubuk-dolgu" style="width: {{ '%.1f' | format(t.kapanan_oran) }}%; background: {{ cfg.STATUS_COLORS[cfg.STATUS_RESOLVED] }}"></span>
+          </span>
+          <span class="cubuk-deger mono">{{ t.acilan }} / {{ t.kapanan }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+
+{% for t in tablolar %}
+  {{ rapor_tablosu(t.anahtar, t.veri) }}
+{% endfor %}
+
+<p class="soluk kucuk">
+  Süre sütunları saat cinsindendir ve arızanın <strong>cihazda yazıldığı an</strong>
+  ile çözüm anı arasından hesaplanır; çevrimdışı bekleyen kayıtlarda süre
+  olduğundan kısa görünmez. Personel iş yükü tablosu anlık durumu gösterir,
+  seçili döneme bağlı değildir.
+</p>
+{% endblock %}

@@ -1,0 +1,166 @@
+{% extends "taban.html" %}
+{% block baslik %}Panel{% endblock %}
+
+{% macro kayit_tablosu(kayitlar) -%}
+<div class="tablo-sarmal">
+  <table class="tablo">
+    <thead>
+      <tr>
+        <th>No</th>
+        <th>Makine</th>
+        <th>Başlık</th>
+        <th>Öncelik</th>
+        <th>Durum</th>
+        <th>Arıza zamanı</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for k in kayitlar %}
+      <tr onclick="window.location='/arizalar/{{ k.id }}'">
+        <td class="mono">#{{ k.id }}</td>
+        <td>{{ k.machine_name }}</td>
+        <td><a href="/arizalar/{{ k.id }}">{{ k.title }}</a></td>
+        <td>
+          <span class="rozet" style="background: {{ cfg.PRIORITY_COLORS[k.priority] }}">
+            {{ cfg.PRIORITY_LABELS[k.priority] }}
+          </span>
+        </td>
+        <td>
+          <span class="rozet" style="background: {{ cfg.STATUS_COLORS[k.status] }}">
+            {{ cfg.STATUS_LABELS[k.status] }}
+          </span>
+        </td>
+        <td class="mono">{{ h.fmt_datetime(k.occurred_at) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{%- endmacro %}
+
+{% macro cubuk_grafik(cubuklar) -%}
+<ul class="cubuk-grafik">
+  {% for c in cubuklar %}
+    <li>
+      <span class="cubuk-etiket">{{ c.etiket }}</span>
+      <span class="cubuk-yol">
+        <span class="cubuk-dolgu" style="width: {{ '%.1f' | format(c.oran) }}%; background: {{ c.renk }}"></span>
+      </span>
+      <span class="cubuk-deger mono">{{ c.deger }}</span>
+    </li>
+  {% endfor %}
+</ul>
+{%- endmacro %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <div>
+    <h1>Hoş geldiniz, {{ kullanici.full_name }}</h1>
+    <p class="soluk">
+      {{ kullanici.role_label }} ·
+      {% if kisisel %}kendi kayıtlarınızın özeti{% else %}üretim hattı arıza durumu özeti{% endif %}
+    </p>
+  </div>
+  <a class="dugme birincil" href="/arizalar/yeni">+ Yeni Arıza</a>
+</div>
+
+{% if kisisel %}
+  <div class="kart-izgara">
+    <div class="kart sayi-kart" style="border-left-color: {{ cfg.STATUS_COLORS[cfg.STATUS_OPEN] }}">
+      <p class="sayi">{{ ozet.acik }}</p>
+      <p class="soluk kucuk">Açık kaydım</p>
+    </div>
+    <div class="kart sayi-kart" style="border-left-color: {{ cfg.STATUS_COLORS[cfg.STATUS_RESOLVED] }}">
+      <p class="sayi">{{ ozet.cozulen }}</p>
+      <p class="soluk kucuk">Çözülen / kapanan</p>
+    </div>
+    <div class="kart sayi-kart">
+      <p class="sayi">{{ ozet.toplam }}</p>
+      <p class="soluk kucuk">Toplam kaydım</p>
+    </div>
+  </div>
+{% else %}
+  <div class="kart-izgara">
+    <div class="kart sayi-kart" style="border-left-color: {{ cfg.STATUS_COLORS[cfg.STATUS_OPEN] }}">
+      <p class="sayi">{{ ozet.open_total }}</p>
+      <p class="soluk kucuk">Açık arıza kaydı</p>
+    </div>
+    <div class="kart sayi-kart" style="border-left-color: {{ cfg.PRIORITY_COLORS[cfg.PRIORITY_URGENT] }}">
+      <p class="sayi">{{ ozet.urgent_open }}</p>
+      <p class="soluk kucuk">Acil öncelikli açık kayıt</p>
+    </div>
+    <div class="kart sayi-kart" style="border-left-color: {{ cfg.PRIORITY_COLORS[cfg.PRIORITY_HIGH] }}">
+      <p class="sayi">{{ ozet.unassigned }}</p>
+      <p class="soluk kucuk">Atanmamış kayıt</p>
+    </div>
+    <div class="kart sayi-kart">
+      <p class="sayi">{{ ozet.opened_today }}</p>
+      <p class="soluk kucuk">Bugün açılan</p>
+    </div>
+    <div class="kart sayi-kart" style="border-left-color: {{ cfg.STATUS_COLORS[cfg.STATUS_RESOLVED] }}">
+      <p class="sayi">{{ ozet.closed_today }}</p>
+      <p class="soluk kucuk">Bugün çözülen / kapanan</p>
+    </div>
+    <div class="kart sayi-kart">
+      <p class="sayi kucuk-sayi">{{ h.humanize_duration(ozet.avg_resolution_hours) }}</p>
+      <p class="soluk kucuk">Ortalama çözüm süresi</p>
+    </div>
+  </div>
+
+  <div class="ikili esit">
+    <div class="kart">
+      <h2>Durum dağılımı</h2>
+      {{ cubuk_grafik(durum_cubuklari) }}
+    </div>
+
+    <div class="kart">
+      <h2>Açık kayıtların önceliği</h2>
+      {{ cubuk_grafik(oncelik_cubuklari) }}
+    </div>
+  </div>
+
+  {% if en_cok_arizalanan %}
+  <div class="kart">
+    <div class="sayfa-basi">
+      <h2>En çok arızalanan makineler</h2>
+      <a class="dugme sade" href="/raporlar">Raporlar →</a>
+    </div>
+    <div class="tablo-sarmal">
+      <table class="tablo">
+        <thead>
+          <tr>
+            <th>Makine</th>
+            <th>Toplam arıza</th>
+            <th>Açık</th>
+            <th>Ortalama çözüm</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in en_cok_arizalanan %}
+          <tr onclick="window.location='/makineler/{{ m.id }}'">
+            <td><a href="/makineler/{{ m.id }}">{{ m.name }}</a></td>
+            <td class="mono">{{ m.fault_count }}</td>
+            <td class="mono">{{ m.open_count }}</td>
+            <td>{{ h.humanize_duration(m.avg_hours) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+{% endif %}
+
+<div class="kart">
+  <div class="sayfa-basi">
+    <h2>{{ liste_basligi }}</h2>
+    <a class="dugme sade" href="/arizalar">Tüm kayıtlar →</a>
+  </div>
+
+  {% if kayitlar %}
+    {{ kayit_tablosu(kayitlar) }}
+  {% else %}
+    <p class="soluk">Gösterilecek kayıt yok.</p>
+  {% endif %}
+</div>
+{% endblock %}

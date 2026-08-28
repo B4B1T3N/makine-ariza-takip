@@ -1,0 +1,136 @@
+{% extends "taban.html" %}
+{% block baslik %}{{ makine.name }}{% endblock %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <div>
+    <h1>{{ makine.name }}</h1>
+    <p>
+      {% if makine.is_active %}
+        <span class="rozet" style="background: {{ cfg.STATUS_COLORS[cfg.STATUS_RESOLVED] }}">Aktif</span>
+      {% else %}
+        <span class="rozet rol">Pasif</span>
+      {% endif %}
+      {% if makine.category %}<span class="soluk">{{ makine.category }}</span>{% endif %}
+    </p>
+  </div>
+  <a class="dugme sade" href="/makineler">← Envantere dön</a>
+</div>
+
+<div class="ikili">
+  <section>
+    <div class="kart">
+      <h2>Künye</h2>
+      <dl class="kunye">
+        <dt>Seri no</dt>
+        <dd class="mono">{{ makine.serial_no or "—" }}</dd>
+
+        <dt>Konum</dt>
+        <dd>{{ makine.location or "—" }}</dd>
+
+        <dt>Kategori</dt>
+        <dd>{{ makine.category or "—" }}</dd>
+
+        <dt>Devreye alma</dt>
+        <dd>{{ h.fmt_date(makine.commissioned_at) }}</dd>
+
+        <dt>Envantere eklenme</dt>
+        <dd>{{ h.fmt_datetime(makine.created_at) }}</dd>
+      </dl>
+
+      {% if makine.notes %}
+        <h3>Notlar</h3>
+        <p class="aciklama">{{ makine.notes }}</p>
+      {% endif %}
+    </div>
+
+    <div class="kart">
+      <div class="sayfa-basi">
+        <h2>Son arıza kayıtları</h2>
+        <a class="dugme sade" href="/arizalar?makine={{ makine.id }}">Tüm geçmiş →</a>
+      </div>
+
+      {% if arizalar %}
+      <div class="tablo-sarmal">
+        <table class="tablo">
+          <thead>
+            <tr>
+              <th>No</th>
+              <th>Başlık</th>
+              <th>Durum</th>
+              <th>Öncelik</th>
+              <th>Arıza zamanı</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for k in arizalar %}
+            <tr onclick="window.location='/arizalar/{{ k.id }}'">
+              <td class="mono">#{{ k.id }}</td>
+              <td><a href="/arizalar/{{ k.id }}">{{ k.title }}</a></td>
+              <td>
+                <span class="rozet" style="background: {{ cfg.STATUS_COLORS[k.status] }}">
+                  {{ cfg.STATUS_LABELS[k.status] }}
+                </span>
+              </td>
+              <td>
+                <span class="rozet" style="background: {{ cfg.PRIORITY_COLORS[k.priority] }}">
+                  {{ cfg.PRIORITY_LABELS[k.priority] }}
+                </span>
+              </td>
+              <td class="mono">{{ h.fmt_datetime(k.occurred_at) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        <p class="soluk">Bu makine için henüz arıza kaydı açılmamış.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <!-- Sağ sütun: özet ve yönetim işlemleri -->
+  <aside>
+    <div class="kart">
+      <h2>Özet</h2>
+      <dl class="kunye">
+        <dt>Toplam arıza</dt>
+        <dd class="mono">{{ istatistik.total_faults }}</dd>
+
+        <dt>Açık arıza</dt>
+        <dd class="mono">{{ istatistik.open_faults }}</dd>
+
+        <dt>Ortalama çözüm</dt>
+        <dd>{{ h.humanize_duration(istatistik.avg_resolution_hours) }}</dd>
+
+        <dt>Son arıza</dt>
+        <dd>{{ h.fmt_datetime(istatistik.last_fault_at) }}</dd>
+      </dl>
+    </div>
+
+    {% if yonetebilir %}
+    <div class="kart">
+      <h2>Yönetim</h2>
+      <a class="dugme" href="/makineler/{{ makine.id }}/duzenle">Künyeyi düzenle</a>
+
+      <form method="post" action="/makineler/{{ makine.id }}/aktiflik" class="form-dugmeler">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="aktif" value="{% if makine.is_active %}0{% else %}1{% endif %}">
+        <button class="dugme" type="submit">
+          {% if makine.is_active %}Pasife al{% else %}Yeniden kullanıma al{% endif %}
+        </button>
+      </form>
+
+      <p class="soluk kucuk">
+        {% if makine.is_active %}
+          Pasife alınan makine yeni arıza kaydında listelenmez; geçmiş kayıtları
+          korunur. Üzerinde kapanmamış arıza varsa pasife alınamaz.
+        {% else %}
+          Bu makine pasif. Yeni arıza kaydı açılırken listelenmiyor.
+        {% endif %}
+      </p>
+    </div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

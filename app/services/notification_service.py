@@ -123,8 +123,17 @@ def unread_count(user_id: int) -> int:
     )
 
 
-def mark_read(notification_id: int) -> None:
-    db.execute("UPDATE notifications SET is_read = TRUE WHERE id = %s", (notification_id,))
+def mark_read(notification_id: int, user_id: int) -> None:
+    """Bildirimi okundu işaretler.
+
+    `user_id` koşulu isteğe bağlı değildir: web arayüzünde bildirim numarası
+    adres çubuğundan gelir ve sahibi olmayan biri başkasının bildirimini
+    okundu yapabilirdi.
+    """
+    db.execute(
+        "UPDATE notifications SET is_read = TRUE WHERE id = %s AND user_id = %s",
+        (notification_id, user_id),
+    )
 
 
 def mark_all_read(user_id: int) -> None:

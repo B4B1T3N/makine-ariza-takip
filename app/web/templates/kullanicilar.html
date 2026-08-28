@@ -1,0 +1,79 @@
+{% extends "taban.html" %}
+{% block baslik %}Kullanıcılar{% endblock %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <h1>Kullanıcılar</h1>
+  <a class="dugme birincil" href="/kullanicilar/yeni">+ Yeni Kullanıcı</a>
+</div>
+
+<form class="filtre" method="get" action="/kullanicilar">
+  <div class="filtre-satir">
+    <div class="alan">
+      <label for="rol">Rol</label>
+      <select id="rol" name="rol">
+        <option value="">Tümü</option>
+        {% for r in cfg.ROLES %}
+          <option value="{{ r }}" {% if secili.rol == r %}selected{% endif %}>
+            {{ cfg.ROLE_LABELS[r] }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <fieldset class="kutucuklar">
+      <legend>Görünüm</legend>
+      <label class="kutucuk">
+        <input type="checkbox" name="pasifler" value="1"
+               {% if secili.pasifler %}checked{% endif %}>
+        Pasif kullanıcıları da göster
+      </label>
+    </fieldset>
+
+    <div class="filtre-dugmeler">
+      <button class="dugme birincil" type="submit">Filtrele</button>
+      <a class="dugme sade" href="/kullanicilar">Temizle</a>
+    </div>
+  </div>
+</form>
+
+<p class="soluk sonuc-sayisi">{{ kullanicilar | length }} kullanıcı listeleniyor</p>
+
+<div class="tablo-sarmal">
+  <table class="tablo">
+    <thead>
+      <tr>
+        <th>Kullanıcı adı</th>
+        <th>Ad soyad</th>
+        <th>Rol</th>
+        <th>Durum</th>
+        <th>Kayıt tarihi</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for k in kullanicilar %}
+      <tr onclick="window.location='/kullanicilar/{{ k.id }}/duzenle'">
+        <td class="mono">
+          <a href="/kullanicilar/{{ k.id }}/duzenle">{{ k.username }}</a>
+        </td>
+        <td>{{ k.full_name }}{% if k.id == ben %} <span class="soluk">(siz)</span>{% endif %}</td>
+        <td><span class="rozet rol">{{ cfg.ROLE_LABELS[k.role] }}</span></td>
+        <td>
+          {% if k.is_active %}
+            <span class="rozet" style="background: {{ cfg.STATUS_COLORS[cfg.STATUS_RESOLVED] }}">Aktif</span>
+          {% else %}
+            <span class="rozet rol">Pasif</span>
+          {% endif %}
+        </td>
+        <td class="mono">{{ h.fmt_date(k.created_at) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="soluk kucuk">
+  Kullanıcılar silinmez: geçmiş kayıtlarda adları görünmeye devam etmelidir.
+  Ayrılan personel <strong>pasife alınır</strong>, oturumu ilk istekte düşer.
+</p>
+{% endblock %}

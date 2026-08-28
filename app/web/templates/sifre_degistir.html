@@ -1,0 +1,36 @@
+{% extends "taban.html" %}
+{% block baslik %}Şifre Değiştir{% endblock %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <h1>Şifre Değiştir</h1>
+  <a class="dugme sade" href="/arizalar">← Geri dön</a>
+</div>
+
+{% if hata %}
+  <div class="uyari hata" role="alert">{{ hata }}</div>
+{% endif %}
+
+<form method="post" action="/hesap/sifre" class="kart dikey giris-kutu">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+
+  <label for="mevcut_sifre">Mevcut şifreniz <span class="zorunlu">*</span></label>
+  <input id="mevcut_sifre" name="mevcut_sifre" type="password"
+         autocomplete="current-password" required>
+
+  <label for="yeni_sifre">Yeni şifre <span class="zorunlu">*</span></label>
+  <input id="yeni_sifre" name="yeni_sifre" type="password"
+         autocomplete="new-password" minlength="4" required>
+
+  <label for="yeni_sifre_tekrar">Yeni şifre (tekrar) <span class="zorunlu">*</span></label>
+  <input id="yeni_sifre_tekrar" name="yeni_sifre_tekrar" type="password"
+         autocomplete="new-password" minlength="4" required>
+
+  <div class="form-dugmeler">
+    <button class="dugme birincil" type="submit">Şifreyi değiştir</button>
+    <a class="dugme sade" href="/arizalar">Vazgeç</a>
+  </div>
+
+  <p class="soluk kucuk">En az 4 karakter olmalıdır.</p>
+</form>
+{% endblock %}

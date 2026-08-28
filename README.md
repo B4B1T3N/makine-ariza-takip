@@ -9,9 +9,10 @@ performansını raporlardan izler.
 
 - **Veritabanı:** PostgreSQL 17 (yerel geliştirmede kurulu, üretimde yönetilen servis)
 - **İş mantığı:** Python — arayüzden bağımsız `app/services/` katmanı
-- **Arayüz:** web (FastAPI + Jinja2) — arıza akışı için hazır; makine
-  envanteri, kullanıcılar ve raporlar Faz 3'te web'e taşınacak, o zamana
-  kadar PyQt6 masaüstü sürüm bu ekranlar için kullanılmaya devam eder
+- **Arayüz:** web (FastAPI + Jinja2) — panel, arıza akışı, makine envanteri,
+  kullanıcı yönetimi, bildirimler ve raporlar tarayıcıdan çalışır. PyQt6
+  masaüstü sürüm aynı veritabanına karşı çalışmaya devam eder; günlük
+  kullanım için gereken tek şey değildir
 - **Arayüz dili:** tamamen Türkçe
 
 ---
@@ -22,8 +23,8 @@ performansını raporlardan izler.
 |---|---|---|
 | **1** | PostgreSQL'e geçiş, saat dilimi, çevrimdışı senkron şeması, eşzamanlılık | ✅ **Tamamlandı** |
 | **2** | FastAPI + oturum, arıza listesi/oluşturma/detay, çevrimdışı kuyruk | ✅ **Tamamlandı** |
-| 3 | Makine envanteri, kullanıcılar, dashboard, raporlar (web) | Sırada |
-| 4 | Ekleri nesne depolamaya (S3/Blob) taşıma | — |
+| **3** | Panel, makine envanteri, kullanıcılar, bildirimler, raporlar (web) | ✅ **Tamamlandı** |
+| 4 | Ekleri nesne depolamaya (S3/Blob) taşıma | Sırada |
 | 5 | Yayın: HTTPS, ortam değişkenleri, yedek doğrulaması | — |
 
 **Faz 1'in kabul kriteri:** mevcut masaüstü arayüz, tek satır değişmeden
@@ -33,6 +34,11 @@ yazılmadan önce kanıtlandı.
 **Faz 2'nin kabul kriteri:** bir operatör tarayıcıdan arıza kaydı açabilmeli,
 bir teknisyen kaydı işleme alıp kapatabilmeli ve **bağlantı koptuğunda girilen
 kayıt kaybolmamalı.** Sağlandı.
+
+**Faz 3'ün kabul kriteri:** bir yönetici, masaüstü sürüme hiç dönmeden
+makine ve kullanıcı yönetebilmeli, raporları görüp Excel'e aktarabilmeli;
+her ekran aynı yetki kısıtlarını sorgu düzeyinde korumalı. Sağlandı — geriye
+yalnızca ek dosyası **yükleme** kaldı (Faz 4).
 
 ---
 
@@ -85,10 +91,11 @@ ekleyin. Üretimde başlatıcı yerine doğrudan uvicorn çalıştırılır:
 uvicorn app.web.main:app --host 0.0.0.0 --port 8000
 ```
 
-### 4. Masaüstü arayüz (Faz 3'e kadar)
+### 4. Masaüstü arayüz (isteğe bağlı)
 
-Makine envanteri, kullanıcı yönetimi ve raporlar henüz web'e taşınmadı.
-O ekranlar için masaüstü sürüm aynı veritabanına karşı çalışmaya devam eder:
+Faz 3 ile birlikte web arayüzü tüm ekranları kapsar. Masaüstü sürüm aynı
+veritabanına karşı çalışmaya devam eder; ek dosyası yüklemek için (Faz 4'e
+kadar) hâlâ tek yol odur:
 
 ```bat
 python run.py
@@ -111,8 +118,9 @@ python tools\reset_db.py
 
 ### İlk giriş
 
-Varsayılan yönetici: **`admin` / `admin`**. Uygulama sizi uyarır —
-**Ayarlar → Şifremi Değiştir** menüsünden hemen değiştirin.
+Varsayılan yönetici: **`admin` / `admin`**. Uygulama sizi uyarır — web
+arayüzünde sağ üstteki **Şifre** bağlantısından (masaüstünde **Ayarlar →
+Şifremi Değiştir**) hemen değiştirin.
 
 > **Uzun dosya yolu hatası (Windows):** PyQt6, Microsoft Store sürümü Python'un
 > uzun `site-packages` yoluna kurulurken 260 karakter sınırına takılabilir.
@@ -240,15 +248,65 @@ açıklama sayfasına düşer.
 > sunulduğunda kuyruk çalışmaya devam eder ama sayfanın kendisi çevrimdışı
 > açılmaz. Faz 5'te HTTPS geldiğinde bu kısıt kalkar.
 
-### Web arayüzünde henüz olmayanlar
+---
+
+## Faz 3'te ne geldi
+
+Web arayüzü artık masaüstü sürümün ekranlarını kapsıyor: panel, makine
+envanteri, kullanıcı yönetimi, bildirimler ve raporlar. Servis katmanına
+dokunulmadı — eklenen tek iş mantığı, ekranla Excel çıktısının aynı veriyi
+kullanmasını sağlayan `report_service.dataset()` oldu.
+
+### Yeni ekranlar
+
+| Adres | Kim görür | Ne yapar |
+|---|---|---|
+| `/panel` | herkes | Rolüne göre değişen özet; giriş sonrası açılan sayfa |
+| `/makineler` | teknisyen, yönetici | Envanter listesi, künye, makine bazlı arıza geçmişi |
+| `/makineler/yeni`, `/duzenle`, `/aktiflik` | yönetici | Makine ekleme, künye düzenleme, pasife alma |
+| `/kullanicilar` | yönetici | Kullanıcı listesi, ekleme, rol/aktiflik, şifre sıfırlama |
+| `/hesap/sifre` | herkes | Kendi şifresini değiştirme |
+| `/bildirimler` | herkes | Uygulama içi bildirimler, okundu/temizle |
+| `/raporlar` | teknisyen, yönetici | Dört rapor + Excel/CSV indirme |
+
+### Panel operatöre tesis geneli sayı göstermez
+
+Operatörün yetkisi kendi kayıtlarıyla sınırlıdır; panel bu kısıtın etrafından
+dolaşan bir yol olmamalıdır. Bu yüzden operatöre **kişisel panel** çıkar:
+kendi açık/çözülen kayıt sayıları ve kendi son kayıtları. Tesis geneli özet,
+durum dağılımı ve makine sıralaması yalnızca teknisyen ve yöneticide oluşur.
+Aynı nedenle envanter ve rapor adresleri operatöre menüde gösterilmemekle
+kalmaz, **adres çubuğundan da 403 döner.**
+
+### Grafikler sunucuda üretilir
+
+Durum/öncelik dağılımı ve arıza trendi, genişliği en büyük değere oranlanmış
+CSS çubuklarıdır. Grafik kütüphanesi eklenmedi: Faz 2'de verilen "npm ve
+derleme adımı yok" kararı sürüyor, sayfa atölye tabletinde hızlı açılıyor.
+Renk tek başına anlam taşımaz — her çubuğun yanında sayısı yazılıdır.
+
+### Bildirimin sahibi sorgunun içinde
+
+`notification_service.mark_read()` artık kullanıcı kimliğini de ister.
+Masaüstünde bildirim numarası ekrandan geliyordu; web'de adres çubuğundan
+gelir ve sahibi olmayan biri başkasının bildirimini okundu yapabilirdi.
+Bildirimden arıza kaydına geçişte de yalnızca **kayıt numarası** kabul edilir;
+serbest bir adres kabul edilseydi buradan dış siteye yönlendirme yapılabilirdi.
+
+### Ekranla Excel aynı tabloyu kullanır
+
+Rapor sütunları ve satır düzeni `report_service.dataset()` içindedir. Ekranda
+gördüğünüz tablo ile indirdiğiniz dosya aynı kaynaktan üretilir; biri
+değişince diğeri sessizce farklı kalmaz. Dosya geçici bir adla diske yazılır,
+yanıt gönderildikten sonra silinir.
+
+### Web arayüzünde henüz olmayan
 
 | Eksik | Nerede |
 |---|---|
-| Makine envanteri, kullanıcı yönetimi, dashboard, raporlar | Faz 3 |
 | Ek dosyası **yükleme** (görüntüleme ve indirme var) | Faz 4 — dosyalar nesne depolamaya taşınırken |
-| Şifre değiştirme ekranı, bildirim listesi | Faz 3 |
 
-Bu ekranlar için masaüstü sürüm aynı veritabanına karşı çalışmaya devam eder.
+Ek yüklemek için o zamana kadar masaüstü sürüm kullanılır.
 
 ---
 
@@ -366,12 +424,17 @@ makine-ariza-takip/
 │   │   ├── report_service.py   Rapor sorguları
 │   │   └── backup_service.py   pg_dump / pg_restore
 │   │
-│   ├── web/                    Web arayüzü  ← Faz 2
+│   ├── web/                    Web arayüzü  ← Faz 2 ve 3
 │   │   ├── main.py             FastAPI uygulaması, oturum, hata sayfaları
 │   │   ├── deps.py             Oturum, mevcut kullanıcı, yetki, CSRF
 │   │   ├── routes/
 │   │   │   ├── auth.py         /giris  /cikis
+│   │   │   ├── dashboard.py    /panel                           ← Faz 3
 │   │   │   ├── faults.py       /arizalar  /arizalar/yeni  /arizalar/{id}
+│   │   │   ├── machines.py     /makineler                       ← Faz 3
+│   │   │   ├── users.py        /kullanicilar  /hesap/sifre      ← Faz 3
+│   │   │   ├── notifications.py  /bildirimler                   ← Faz 3
+│   │   │   ├── reports.py      /raporlar  /raporlar/disa-aktar  ← Faz 3
 │   │   │   └── api.py          /api/arizalar — çevrimdışı kuyruğun ucu
 │   │   ├── templates/          Jinja2 şablonları (Türkçe)
 │   │   └── static/
@@ -379,13 +442,13 @@ makine-ariza-takip/
 │   │       ├── kuyruk.js       IndexedDB çevrimdışı kuyruk
 │   │       └── sw.js           Service worker
 │   │
-│   ├── ui/                     PyQt6 ekranları (Faz 3'te web devralacak)
+│   ├── ui/                     PyQt6 ekranları (web devraldı, kullanımda kalıyor)
 │   └── utils/
 │       ├── security.py         PBKDF2 şifre saklama
 │       ├── helpers.py          UTC ↔ yerel saat dönüşümleri
 │       └── export.py           Excel / CSV
 │
-├── tests/                      108 test
+├── tests/                      141 test
 └── tools/
     ├── seed_demo.py            Demo verisi
     ├── reset_db.py             Sıfırlama (önce yedek alır)
@@ -428,7 +491,7 @@ PBKDF2-HMAC-SHA256 (200.000 tur). Sadece standart kütüphane kullanılır.
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-108 test. Her test izole bir test veritabanı kullanır ve şemayı sıfırdan kurar;
+141 test. Her test izole bir test veritabanı kullanır ve şemayı sıfırdan kurar;
 `TEST_DATABASE_URL` adında "test" geçmiyorsa çalışmayı reddeder — üretim
 veritabanının yanlışlıkla silinmesini önlemek için.
 
@@ -445,14 +508,25 @@ sayfalama, rol bazlı işlem yetkileri, eşzamanlı düzenlemenin reddi ve
 çevrimdışı kuyruğun sözleri (aynı `client_uuid` ikinci kayıt açmaz, arıza
 zamanı gönderim anına kaymaz, oturumsuz istek yönlendirilmeyip 401 alır).
 
+Faz 3 ile gelen 33 web testi: envanterin operatöre kapalı olması ve
+teknisyenin görüp değiştirememesi, seri no / kullanıcı adı tekrarının
+reddi, açık arızası olan makinenin pasife alınamaması, pasife alınan
+makinenin yeni arıza formunda listelenmemesi, yöneticinin kendi hesabını
+pasife alamaması, son yöneticinin rolünü düşürememesi, şifre sıfırlama ve
+kendi şifresini değiştirme, başkasının bildirimini okundu yapamama,
+bildirim hedefinin dış adres kabul etmemesi, operatör panelinde tesis
+geneli sayıların ve başkasının kaydının görünmemesi, bozuk/ters tarih
+aralığının sayfayı düşürmemesi, Excel ve CSV indirmelerinin doğru dosyayı
+üretmesi.
+
 ---
 
 ## Bilinen kısıtlar
 
 - **Ekler hâlâ yerel diskte.** Faz 4'e kadar sunucuda kalıcı disk gerekir;
   web arayüzünden yükleme de o zaman gelecek.
-- **Web arayüzü henüz arıza akışını kapsar.** Envanter, kullanıcılar, dashboard
-  ve raporlar Faz 3'e kadar masaüstü sürümdedir.
+- **Ek yükleme yalnızca masaüstünde.** Web arayüzü ekleri gösterir ve
+  indirir; yükleme Faz 4'te, dosyalar nesne depolamaya taşınırken gelecek.
 - **Şifre karmaşıklık kuralı yok** — sadece en az 4 karakter.
 - **Hesap kilitleme yok.** Sınırsız şifre denemesi yapılabilir; PBKDF2'nin
   yavaşlığı kısmi koruma sağlar ama gerçek bir önlem değildir. Web arayüzü bu

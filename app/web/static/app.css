@@ -113,6 +113,10 @@ a:hover { text-decoration: underline; }
 }
 @media (max-width: 900px) { .ikili { grid-template-columns: 1fr; } }
 
+/* Yan yana iki eşit kart (panel ve rapor grafikleri). */
+.ikili.esit { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 900px) { .ikili.esit { grid-template-columns: 1fr; } }
+
 .kart {
   background: var(--kart);
   border: 1px solid var(--cizgi);
@@ -293,3 +297,61 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 @media (prefers-reduced-motion: no-preference) {
   .dugme, .menu a, .tablo tbody tr { transition: background-color .12s ease; }
 }
+
+/* --- Faz 3: panel, raporlar, bildirimler -------------------------------- */
+
+/* Sayı kartları: en dar tablette tek sütuna, geniş ekranda üçe/dörde iner. */
+.kart-izgara {
+  display: grid; gap: .8rem; margin-bottom: 1.2rem;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.sayi-kart { margin: 0; border-left: 4px solid var(--vurgu); }
+.sayi-kart .sayi { font-size: 2rem; font-weight: 650; margin: 0 0 .15rem; }
+.sayi-kart .kucuk-sayi { font-size: 1.25rem; }
+
+/* Sunucuda üretilen çubuk grafik: genişlik yüzdesi en büyük değere oranlı.
+   Renk tek başına anlam taşımaz, sayı her çubuğun yanında yazılıdır. */
+.cubuk-grafik { list-style: none; margin: 0; padding: 0; }
+.cubuk-grafik li {
+  display: grid; grid-template-columns: 8.5rem 1fr 4.5rem;
+  gap: .6rem; align-items: center; padding: .22rem 0;
+}
+.cubuk-etiket { font-size: .88rem; color: var(--soluk); }
+.cubuk-yol {
+  background: var(--zemin); border-radius: 6px; height: 1.1rem;
+  overflow: hidden; display: flex;
+}
+.cubuk-dolgu { height: 100%; min-width: 2px; border-radius: 6px; }
+.cubuk-yol.ikili-cubuk { flex-direction: column; height: 1.4rem; gap: 2px; }
+.cubuk-yol.ikili-cubuk .cubuk-dolgu { height: calc(50% - 1px); }
+.cubuk-deger { font-size: .88rem; text-align: right; }
+.cubuk-grafik.trend { max-height: 22rem; overflow-y: auto; }
+
+.gosterge { display: flex; align-items: center; gap: .35rem; margin: 0 0 .6rem; }
+.nokta {
+  display: inline-block; width: .6rem; height: .6rem; border-radius: 50%;
+  background: var(--vurgu);
+}
+.gosterge .nokta:not(:first-child) { margin-left: .8rem; }
+
+.indirme { display: flex; gap: .4rem; }
+
+/* Rapor tabloları satır bazında tıklanabilir değil; el imleci yanıltmasın. */
+.tablo.dokunmasiz tbody tr { cursor: default; }
+
+.rozet.sayac { background: var(--hata); margin-left: .15rem; }
+
+.rol-ipuclari { margin: .35rem 0 0; padding-left: 1.1rem; }
+
+.bildirim-listesi { list-style: none; margin: 0 0 1rem; padding: 0; }
+.bildirim-listesi li {
+  display: flex; gap: 1rem; align-items: center; justify-content: space-between;
+  flex-wrap: wrap;
+  background: var(--kart); border: 1px solid var(--cizgi);
+  border-radius: var(--yuvarlak); padding: .8rem 1rem; margin-bottom: .5rem;
+}
+.bildirim-listesi li.okunmamis { border-left: 4px solid var(--vurgu); }
+.bildirim-metin { flex: 1 1 320px; }
+.bildirim-metin p { margin: 0 0 .15rem; }
+.bildirim-baslik { font-weight: 550; }
+.bildirim-baslik .nokta { margin-right: .3rem; }

@@ -262,3 +262,95 @@ def workload_by_technician() -> list[dict]:
     for row in rows:
         row["avg_hours"] = _f(row["avg_hours"])
     return rows
+
+
+# --- Dışa aktarılabilir tablolar ------------------------------------------
+# Rapor tablolarının sütun adları ve satır düzeni burada durur: ekranda
+# gösterilen tablo ile Excel'e yazılan tablo aynı kaynaktan gelsin, biri
+# değişince diğeri sessizce farklı kalmasın.
+REPORT_LABELS = {
+    "trend": "Arıza trendi",
+    "makine": "En çok arızalanan makineler",
+    "cozum": "Makine bazında çözüm süreleri",
+    "personel": "Personel iş yükü",
+}
+
+REPORTS = tuple(REPORT_LABELS)
+
+
+def _hours(value: float | None) -> float | str:
+    """Süreleri tabloya yazarken bir ondalık yeter; boş süre boş hücredir."""
+    return round(value, 1) if value is not None else ""
+
+
+def bucket_label(bucket: str, group: str) -> str:
+    """SQL bucket anahtarını okunur Türkçe etikete çevirir."""
+    aylar = ["Oca", "Şub", "Mar", "Nis", "May", "Haz",
+             "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]
+    try:
+        if group == "ay":
+            year, month = bucket.split("-")
+            return f"{aylar[int(month) - 1]} {year}"
+        if group == "hafta":
+            year, week = bucket.split("-W")
+            return f"{int(week)}. hafta {year}"
+        year, month, day = bucket.split("-")
+        return f"{day}.{month}.{year}"
+    except (ValueError, IndexError):
+        return bucket
+
+
+def dataset(
+    report: str,
+    date_from: str,
+    date_to: str,
+    group: str = "gun",
+) -> tuple[str, list[str], list[list]]:
+    """Bir raporun (başlık, sütunlar, satırlar) üçlüsü.
+
+    Ekranda gösterme ve Excel/CSV'ye yazma aynı veriyi kullanır.
+    """
+    if report == "trend":
+        rows = [
+            [bucket_label(r["bucket"], group), r["opened"], r["closed"]]
+            for r in trend(date_from, date_to, group)
+        ]
+        return REPORT_LABELS["trend"], ["Dönem", "Açılan", "Çözülen/Kapanan"], rows
+
+    if report == "cozum":
+        rows = [
+            [r["name"], r["location"] or "", r["total"], r["resolved"] or 0,
+             _hours(r["avg_hours"]), _hours(r["min_hours"]), _hours(r["max_hours"])]
+            for r in resolution_by_machine(date_from, date_to)
+        ]
+        return (
+            REPORT_LABELS["cozum"],
+            ["Makine", "Konum", "Toplam", "Çözülen",
+             "Ortalama (sa)", "En hızlı (sa)", "En yavaş (sa)"],
+            rows,
+        )
+
+    if report == "personel":
+        # İş yükü anlık durumdur: kimin üzerinde şu an kaç açık kayıt var.
+        # Tarih aralığına bağlanmaz.
+        rows = [
+            [r["full_name"], config.ROLE_LABELS.get(r["role"], r["role"]),
+             r["open_count"] or 0, r["total_count"] or 0, _hours(r["avg_hours"])]
+            for r in workload_by_technician()
+        ]
+        return (
+            REPORT_LABELS["personel"],
+            ["Personel", "Rol", "Açık kayıt", "Toplam kayıt", "Ort. çözüm (sa)"],
+            rows,
+        )
+
+    rows = [
+        [r["name"], r["serial_no"] or "", r["location"] or "",
+         r["fault_count"], r["open_count"] or 0, _hours(r["avg_hours"])]
+        for r in top_machines(10, date_from, date_to)
+    ]
+    return (
+        REPORT_LABELS["makine"],
+        ["Makine", "Seri no", "Konum", "Toplam arıza", "Açık", "Ort. çözüm (sa)"],
+        rows,
+    )

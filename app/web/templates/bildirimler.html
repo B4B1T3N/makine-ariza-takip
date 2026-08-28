@@ -1,0 +1,79 @@
+{% extends "taban.html" %}
+{% block baslik %}Bildirimler{% endblock %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <div>
+    <h1>Bildirimler</h1>
+    <p class="soluk">
+      {% if okunmamis_sayisi %}
+        {{ okunmamis_sayisi }} okunmamış bildirim
+      {% else %}
+        Okunmamış bildiriminiz yok
+      {% endif %}
+    </p>
+  </div>
+
+  <div class="form-dugmeler">
+    {% if secili.okunmamis %}
+      <a class="dugme sade" href="/bildirimler">Tümünü göster</a>
+    {% else %}
+      <a class="dugme sade" href="/bildirimler?okunmamis=1">Yalnızca okunmamışlar</a>
+    {% endif %}
+
+    <form method="post" action="/bildirimler/tumu-okundu">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="dugme" type="submit" {% if not okunmamis_sayisi %}disabled{% endif %}>
+        Tümünü okundu yap
+      </button>
+    </form>
+
+    <form method="post" action="/bildirimler/temizle"
+          onsubmit="return confirm('Tüm bildirimleriniz silinecek. Devam edilsin mi?')">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="dugme sade" type="submit"
+              {% if not bildirim_kayitlari %}disabled{% endif %}>Temizle</button>
+    </form>
+  </div>
+</div>
+
+{% if bildirim_kayitlari %}
+<ul class="bildirim-listesi">
+  {% for b in bildirim_kayitlari %}
+    <li class="{% if not b.is_read %}okunmamis{% endif %}">
+      <div class="bildirim-metin">
+        <p class="bildirim-baslik">
+          {% if not b.is_read %}<span class="nokta" aria-label="Okunmamış"></span>{% endif %}
+          {{ b.title }}
+        </p>
+        <p class="soluk">{{ b.message }}</p>
+        <p class="soluk kucuk mono">{{ h.fmt_datetime(b.created_at) }}</p>
+      </div>
+
+      <form method="post" action="/bildirimler/{{ b.id }}/okundu">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="hedef" value="{{ b.fault_id or '' }}">
+        <button class="dugme" type="submit">
+          {% if b.fault_id %}Kaydı aç{% else %}Okundu{% endif %}
+        </button>
+      </form>
+    </li>
+  {% endfor %}
+</ul>
+
+<p class="soluk kucuk">
+  Bildirimler yalnızca size aittir; en fazla son 100 kayıt gösterilir.
+</p>
+{% else %}
+<div class="bos">
+  <p>
+    {% if secili.okunmamis %}
+      Okunmamış bildiriminiz yok.
+    {% else %}
+      Henüz bildiriminiz yok. Yeni arıza, durum değişikliği, atama ve notlar
+      buraya düşer.
+    {% endif %}
+  </p>
+</div>
+{% endif %}
+{% endblock %}

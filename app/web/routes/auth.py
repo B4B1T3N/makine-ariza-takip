@@ -19,7 +19,7 @@ def _guvenli_hedef(devam: str | None) -> str:
     adres olarak çözülür, bu yüzden ayrıca elenir.
     """
     if not devam or not devam.startswith("/") or devam.startswith("//"):
-        return "/arizalar"
+        return "/panel"
     return devam
 
 

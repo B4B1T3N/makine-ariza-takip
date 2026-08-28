@@ -16,16 +16,30 @@
 
 {% if kullanici %}
 <header class="ust">
-  <a class="marka" href="/arizalar">{{ cfg.APP_NAME }}</a>
+  <a class="marka" href="/panel">{{ cfg.APP_NAME }}</a>
 
   <nav class="menu">
+    <a href="/panel" {% if request.url.path == '/panel' %}class="etkin"{% endif %}>Panel</a>
     <a href="/arizalar" {% if request.url.path == '/arizalar' %}class="etkin"{% endif %}>Arızalar</a>
     <a href="/arizalar/yeni" {% if request.url.path == '/arizalar/yeni' %}class="etkin"{% endif %}>Yeni Arıza</a>
+    {% if not kullanici.is_operator %}
+      <a href="/makineler" {% if request.url.path.startswith('/makineler') %}class="etkin"{% endif %}>Makineler</a>
+    {% endif %}
+    {% if kullanici.can_view_reports %}
+      <a href="/raporlar" {% if request.url.path.startswith('/raporlar') %}class="etkin"{% endif %}>Raporlar</a>
+    {% endif %}
+    {% if kullanici.can_manage_users %}
+      <a href="/kullanicilar" {% if request.url.path.startswith('/kullanicilar') %}class="etkin"{% endif %}>Kullanıcılar</a>
+    {% endif %}
   </nav>
 
   <div class="kullanici">
     <span class="ad">{{ kullanici.full_name }}</span>
     <span class="rozet rol">{{ kullanici.role_label }}</span>
+    <a class="dugme sade" href="/bildirimler">
+      Bildirimler{% if okunmamis %} <span class="rozet sayac">{{ okunmamis }}</span>{% endif %}
+    </a>
+    <a class="dugme sade" href="/hesap/sifre">Şifre</a>
     <form method="post" action="/cikis">
       <input type="hidden" name="csrf" value="{{ csrf }}">
       <button class="dugme sade" type="submit">Çıkış</button>

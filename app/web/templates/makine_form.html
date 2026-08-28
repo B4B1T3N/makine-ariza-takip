@@ -1,0 +1,62 @@
+{% extends "taban.html" %}
+{% block baslik %}{% if makine %}Makine Düzenle{% else %}Yeni Makine{% endif %}{% endblock %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <h1>{% if makine %}Makine Künyesi{% else %}Yeni Makine{% endif %}</h1>
+  <a class="dugme sade"
+     href="{% if makine %}/makineler/{{ makine.id }}{% else %}/makineler{% endif %}">← Vazgeç</a>
+</div>
+
+{% if hata %}
+  <div class="uyari hata" role="alert">{{ hata }}</div>
+{% endif %}
+
+<form method="post" class="kart dikey"
+      action="{% if makine %}/makineler/{{ makine.id }}/duzenle{% else %}/makineler/yeni{% endif %}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+
+  <label for="ad">Makine adı <span class="zorunlu">*</span></label>
+  <input id="ad" name="ad" value="{{ girilen.name or '' }}" maxlength="200" required>
+
+  <label for="seri_no">Seri numarası</label>
+  <input id="seri_no" name="seri_no" value="{{ girilen.serial_no or '' }}" maxlength="120">
+
+  <label for="konum">Konum</label>
+  <input id="konum" name="konum" value="{{ girilen.location or '' }}"
+         list="konum-listesi" maxlength="120" placeholder="Örn. Dökümhane, Hat 3">
+  <datalist id="konum-listesi">
+    {% for k in konumlar %}<option value="{{ k }}"></option>{% endfor %}
+  </datalist>
+
+  <label for="kategori">Kategori</label>
+  <input id="kategori" name="kategori" value="{{ girilen.category or '' }}"
+         list="kategori-listesi" maxlength="120" placeholder="Örn. Torna, Pres">
+  <datalist id="kategori-listesi">
+    {% for k in kategoriler %}<option value="{{ k }}"></option>{% endfor %}
+  </datalist>
+
+  <label for="devreye_alma">Devreye alma tarihi</label>
+  <input id="devreye_alma" name="devreye_alma" type="date"
+         value="{{ girilen.commissioned_at or '' }}">
+
+  <label for="notlar">Notlar</label>
+  <textarea id="notlar" name="notlar" rows="4"
+            placeholder="Bakım periyodu, tedarikçi, dikkat edilecekler">{{ girilen.notes or '' }}</textarea>
+
+  <div class="form-dugmeler">
+    <button class="dugme birincil" type="submit">
+      {% if makine %}Değişiklikleri kaydet{% else %}Makineyi ekle{% endif %}
+    </button>
+    <a class="dugme sade"
+       href="{% if makine %}/makineler/{{ makine.id }}{% else %}/makineler{% endif %}">Vazgeç</a>
+  </div>
+
+  {% if makine %}
+    <p class="soluk kucuk">
+      Makinenin aktifliği bu formdan değişmez; kullanımdan kaldırmak için künye
+      sayfasındaki <strong>Pasife al</strong> düğmesini kullanın.
+    </p>
+  {% endif %}
+</form>
+{% endblock %}

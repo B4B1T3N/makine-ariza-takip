@@ -1,0 +1,84 @@
+{% extends "taban.html" %}
+{% block baslik %}{% if hedef %}Kullanıcı Düzenle{% else %}Yeni Kullanıcı{% endif %}{% endblock %}
+
+{% block icerik %}
+<div class="sayfa-basi">
+  <h1>{% if hedef %}{{ hedef.username }}{% else %}Yeni Kullanıcı{% endif %}</h1>
+  <a class="dugme sade" href="/kullanicilar">← Listeye dön</a>
+</div>
+
+{% if hata %}
+  <div class="uyari hata" role="alert">{{ hata }}</div>
+{% endif %}
+
+<form method="post" class="kart dikey"
+      action="{% if hedef %}/kullanicilar/{{ hedef.id }}/duzenle{% else %}/kullanicilar/yeni{% endif %}">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+
+  {% if hedef %}
+    <label>Kullanıcı adı</label>
+    <p class="mono">{{ hedef.username }}
+      <span class="soluk kucuk">— kullanıcı adı değiştirilemez</span>
+    </p>
+  {% else %}
+    <label for="kullanici_adi">Kullanıcı adı <span class="zorunlu">*</span></label>
+    <input id="kullanici_adi" name="kullanici_adi" value="{{ girilen.username or '' }}"
+           maxlength="60" autocomplete="off" required>
+  {% endif %}
+
+  <label for="ad_soyad">Ad soyad <span class="zorunlu">*</span></label>
+  <input id="ad_soyad" name="ad_soyad" value="{{ girilen.full_name or '' }}"
+         maxlength="120" required>
+
+  <label for="rol">Rol</label>
+  <select id="rol" name="rol">
+    {% for r in cfg.ROLES %}
+      <option value="{{ r }}"
+        {% if (girilen.role or cfg.ROLE_OPERATOR) == r %}selected{% endif %}>
+        {{ cfg.ROLE_LABELS[r] }}
+      </option>
+    {% endfor %}
+  </select>
+  <ul class="soluk kucuk rol-ipuclari">
+    {% for r in cfg.ROLES %}
+      <li><strong>{{ cfg.ROLE_LABELS[r] }}:</strong> {{ rol_aciklamalari[r] }}</li>
+    {% endfor %}
+  </ul>
+
+  {% if hedef %}
+    <label class="kutucuk">
+      <input type="checkbox" name="aktif" value="1"
+             {% if girilen.is_active %}checked{% endif %}
+             {% if kendisi %}disabled{% endif %}>
+      Hesap aktif
+    </label>
+    {% if kendisi %}
+      <input type="hidden" name="aktif" value="1">
+      <p class="soluk kucuk">Kendi hesabınızı pasife alamazsınız.</p>
+    {% endif %}
+
+    <label for="yeni_sifre">Yeni şifre</label>
+    <input id="yeni_sifre" name="yeni_sifre" type="password"
+           autocomplete="new-password" placeholder="Değiştirmeyecekseniz boş bırakın">
+    <p class="soluk kucuk">
+      Şifre sıfırlandığında kullanıcının açık oturumu düşmez; yeni şifre
+      bir sonraki girişte geçerlidir.
+    </p>
+  {% else %}
+    <label for="sifre">Başlangıç şifresi <span class="zorunlu">*</span></label>
+    <input id="sifre" name="sifre" type="password" autocomplete="new-password"
+           minlength="4" required>
+    <p class="soluk kucuk">
+      En az 4 karakter. Kullanıcı ilk girişten sonra kendi şifresini
+      <strong>Şifre Değiştir</strong> sayfasından değiştirebilir.
+    </p>
+  {% endif %}
+
+  <div class="form-dugmeler">
+    <button class="dugme birincil" type="submit">
+      {% if hedef %}Değişiklikleri kaydet{% else %}Kullanıcıyı oluştur{% endif %}
+    </button>
+    <a class="dugme sade" href="/kullanicilar">Vazgeç</a>
+  </div>
+</form>
+{% endblock %}
