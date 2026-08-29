@@ -52,7 +52,7 @@
     </thead>
     <tbody>
       {% for k in kullanicilar %}
-      <tr onclick="window.location='/kullanicilar/{{ k.id }}/duzenle'">
+      <tr data-adres="/kullanicilar/{{ k.id }}/duzenle">
         <td class="mono">
           <a href="/kullanicilar/{{ k.id }}/duzenle">{{ k.username }}</a>
         </td>

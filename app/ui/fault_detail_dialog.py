@@ -457,11 +457,13 @@ class FaultDetailDialog(QDialog):
             QMessageBox.information(self, "Seçim yok", "Lütfen bir dosya seçin.")
             return
 
-        path = fault_service.attachment_path(data["stored_name"])
-        if not path.exists():
+        # Dosya nesne depolamada olabilir; o zaman geçici bir kopya inilir.
+        try:
+            path = fault_service.attachment_file(data["id"])
+        except FaultError:
             QMessageBox.warning(
                 self, "Dosya bulunamadı",
-                "Ek dosyası diskte bulunamadı. Yedekten geri yüklenmiş olabilir."
+                "Ek dosyası depoda bulunamadı. Yedekten geri yüklenmiş olabilir."
             )
             return
         _open_in_system(path)

@@ -178,5 +178,6 @@ def drop_all() -> None:
     with connection() as conn:
         conn.execute(
             """DROP TABLE IF EXISTS notifications, attachments, fault_logs,
-                                    faults, machines, users, app_meta CASCADE"""
+                                    faults, machines, users, app_meta,
+                                    login_attempts CASCADE"""
         )

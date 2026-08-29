@@ -355,3 +355,24 @@ input:focus-visible, select:focus-visible, textarea:focus-visible,
 .bildirim-metin p { margin: 0 0 .15rem; }
 .bildirim-baslik { font-weight: 550; }
 .bildirim-baslik .nokta { margin-right: .3rem; }
+
+/* --- Faz 4: ek dosyası yükleme ----------------------------------------- */
+.ek-yukle {
+  display: flex; gap: .6rem; align-items: center; flex-wrap: wrap;
+  margin-top: .8rem; padding-top: .8rem; border-top: 1px solid var(--cizgi);
+}
+.ek-yukle label { margin: 0; white-space: nowrap; }
+/* Dokunmatik ekranda dosya seçici rahat tutulabilsin diye tam genişlik. */
+.ek-yukle input[type="file"] { flex: 1 1 240px; min-width: 0; }
+.dugme.kucuk { padding: .25rem .6rem; font-size: .82rem; }
+.ek-listesi form { margin-left: auto; }
+
+/* --- Faz 5: kurulum uyarıları ------------------------------------------ */
+.kurulum-uyarilari { border-left: 4px solid var(--uyari); }
+.bulgu-listesi { list-style: none; margin: 0; padding: 0; }
+.bulgu-listesi li {
+  display: flex; gap: .7rem; align-items: baseline;
+  padding: .5rem 0; border-bottom: 1px solid var(--cizgi);
+}
+.bulgu-listesi li:last-child { border-bottom: none; }
+.bulgu-listesi strong { display: block; }

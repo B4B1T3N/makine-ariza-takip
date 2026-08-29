@@ -13,6 +13,11 @@ jinja2>=3.1,<4             # Sunucu taraflı şablonlar
 itsdangerous>=2.1,<3       # Oturum çerezinin imzalanması
 python-multipart>=0.0.9    # HTML form gövdelerinin çözümlenmesi
 
+# --- Nesne depolama (Faz 4) ---
+# Yalnızca ekler S3 uyumlu bir servise taşınacaksa (MAT_STORAGE=s3) gerekir.
+# Varsayılan yerel diskte hiçbir ek paket istemez, bu yüzden kapalı bırakıldı:
+# boto3>=1.34,<2
+
 # --- Raporlama ---
 openpyxl>=3.1,<4           # Excel (.xlsx) dışa aktarma
 

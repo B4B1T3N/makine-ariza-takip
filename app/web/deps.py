@@ -97,6 +97,21 @@ def zorunlu_yonetici(request: Request) -> CurrentUser:
     return user
 
 
+def istemci_adresi(request: Request) -> str | None:
+    """İsteği yapan istemcinin adresi (giriş hız sınırı için).
+
+    Ters vekil arkasında gerçek adres `X-Forwarded-For` başlığındadır; ama
+    bu başlığı istemci de gönderebilir. Bu yüzden yalnızca `MAT_TRUST_PROXY`
+    açıkken okunur — kapalıyken uydurulmuş bir başlıkla hız sınırı başka
+    bir adresin üzerine yıkılabilirdi.
+    """
+    if config.trust_proxy():
+        iletilen = request.headers.get("x-forwarded-for")
+        if iletilen:
+            return iletilen.split(",")[0].strip() or None
+    return request.client.host if request.client else None
+
+
 # --- CSRF -----------------------------------------------------------------
 def csrf_token(request: Request) -> str:
     """Oturuma bağlı form imzası. Yoksa üretilir (giriş formu için gerekir)."""

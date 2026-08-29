@@ -1,12 +1,19 @@
 """Arıza listesi, kayıt açma, detay ve detay üzerindeki işlemler."""
 from __future__ import annotations
 
+import mimetypes
+from urllib.parse import quote
+
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from app import config
-from app.db import database as db
-from app.services import auth_service, fault_service, machine_service
+from app.services import (
+    auth_service,
+    fault_service,
+    machine_service,
+    storage_service,
+)
 from app.services.auth_service import CurrentUser
 from app.web import deps
 
@@ -306,20 +313,91 @@ def duzenle(
 
 
 # --- Ekler ----------------------------------------------------------------
-# Faz 2'de ekler yalnızca görüntülenip indirilebilir. Yükleme, dosyaların
-# nesne depolamaya taşınacağı Faz 4 ile birlikte gelecek; o zamana kadar
-# yükleme akışını iki kez yazmamak için masaüstü arayüzde bırakıldı.
+# Dosyanın nerede durduğunu servis katmanı bilir (yerel disk ya da nesne
+# depolama); buradaki kod yalnızca yetkiyi ve HTTP tarafını üstlenir.
+@router.post("/arizalar/{fault_id}/ek")
+async def ek_yukle(request: Request, fault_id: int):
+    user = deps.zorunlu_kullanici(request)
+    form = await request.form()
+    deps.csrf_dogrula(request, form.get("csrf"))
+    _gorulebilir_ariza(fault_id, user)
+
+    dosyalar = [d for d in form.getlist("dosya") if hasattr(d, "filename") and d.filename]
+    if not dosyalar:
+        deps.bildir(request, "Dosya seçilmedi.", "uyari")
+        return RedirectResponse("/arizalar/" + str(fault_id), status_code=303)
+
+    eklenen, hatalar = 0, []
+    for dosya in dosyalar:
+        # Boyut, baytlar okunduktan sonra servis katmanında da denetlenir;
+        # burada okumayı sınırlamak, 20 MB'lık sınırın belleğe alınacak
+        # veriyi de sınırlaması içindir.
+        veri = await dosya.read(config.ATTACHMENT_MAX_BYTES + 1)
+        try:
+            fault_service.add_attachment_bytes(
+                fault_id, user.id, dosya.filename, veri
+            )
+            eklenen += 1
+        except fault_service.FaultError as exc:
+            hatalar.append(f"{dosya.filename}: {exc}")
+
+    if eklenen:
+        deps.bildir(request, f"{eklenen} dosya eklendi.", "basari")
+    for mesaj in hatalar:
+        deps.bildir(request, mesaj, "hata")
+
+    return RedirectResponse("/arizalar/" + str(fault_id), status_code=303)
+
+
 @router.get("/ekler/{attachment_id}")
 def ek_indir(request: Request, attachment_id: int):
     user = deps.zorunlu_kullanici(request)
 
-    ek = db.query_one("SELECT * FROM attachments WHERE id = %s", (attachment_id,))
+    ek = fault_service.get_attachment(attachment_id)
     if ek is None:
         raise deps.YetkiYok("Dosya bulunamadı.")
     # Dosyaya erişim, bağlı olduğu arıza kaydının görünürlüğüne tabidir.
     _gorulebilir_ariza(ek["fault_id"], user)
 
-    yol = fault_service.attachment_path(ek["stored_name"])
-    if not yol.is_file():
-        raise deps.YetkiYok("Dosya sunucuda bulunamadı.")
-    return FileResponse(yol, filename=ek["file_name"])
+    yerel = storage_service.yerel_yol(ek["stored_name"])
+    if yerel is not None:
+        if not yerel.is_file():
+            raise deps.YetkiYok("Dosya sunucuda bulunamadı.")
+        return FileResponse(yerel, filename=ek["file_name"])
+
+    # Nesne depolamadaki dosya sunucudan geçirilerek verilir. İmzalı doğrudan
+    # bağlantı daha ucuz olurdu ama o zaman yetki kontrolü depoya taşınırdı;
+    # kaydı görme yetkisi burada, tek yerde kalsın.
+    try:
+        veri = fault_service.attachment_bytes(attachment_id)
+    except fault_service.FaultError as exc:
+        raise deps.YetkiYok(str(exc)) from exc
+
+    return Response(
+        veri,
+        media_type=mimetypes.guess_type(ek["file_name"])[0]
+        or "application/octet-stream",
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="{quote(ek["file_name"])}"'
+        },
+    )
+
+
+@router.post("/ekler/{attachment_id}/sil")
+def ek_sil(request: Request, attachment_id: int, csrf: str = Form("")):
+    user = deps.zorunlu_kullanici(request)
+    deps.csrf_dogrula(request, csrf)
+
+    ek = fault_service.get_attachment(attachment_id)
+    if ek is None:
+        raise deps.YetkiYok("Dosya bulunamadı.")
+    fault = _gorulebilir_ariza(ek["fault_id"], user)
+
+    # Yükleyen kişi kendi dosyasını, teknisyen ve yönetici her dosyayı siler.
+    if not user.can_change_status and ek["uploaded_by"] != user.id:
+        raise deps.YetkiYok("Bu dosyayı yalnızca yükleyen kişi silebilir.")
+
+    fault_service.delete_attachment(attachment_id)
+    deps.bildir(request, "Dosya silindi.", "basari")
+    return RedirectResponse("/arizalar/" + str(fault["id"]), status_code=303)

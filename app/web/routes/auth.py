@@ -5,7 +5,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
 from app.db import database as db
-from app.services.auth_service import AuthError, login
+from app.services.auth_service import AuthError, LoginLocked, login
 from app.web import deps
 
 router = APIRouter()
@@ -43,8 +43,12 @@ def giris_yap(
 ):
     deps.csrf_dogrula(request, csrf)
     try:
-        user = login(kullanici_adi, sifre)
+        user = login(kullanici_adi, sifre, deps.istemci_adresi(request))
     except AuthError as exc:
+        # Hız sınırına takılan istek 401 değil 429 döner: "şifren yanlış" ile
+        # "şimdilik denemeyi bırak" farklı şeylerdir ve günlüklerde de öyle
+        # görünmelidir.
+        kod = 429 if isinstance(exc, LoginLocked) else 401
         # Girilen kullanıcı adı formda kalsın, şifre kalmasın.
         return deps.sayfa(
             request, "giris.html",
@@ -54,7 +58,7 @@ def giris_yap(
                 "devam": devam,
                 "varsayilan_admin": db.default_admin_pending(),
             },
-            durum_kodu=401,
+            durum_kodu=kod,
         )
 
     deps.oturum_ac(request, user)

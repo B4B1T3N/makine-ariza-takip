@@ -10,9 +10,10 @@ performansını raporlardan izler.
 - **Veritabanı:** PostgreSQL 17 (yerel geliştirmede kurulu, üretimde yönetilen servis)
 - **İş mantığı:** Python — arayüzden bağımsız `app/services/` katmanı
 - **Arayüz:** web (FastAPI + Jinja2) — panel, arıza akışı, makine envanteri,
-  kullanıcı yönetimi, bildirimler ve raporlar tarayıcıdan çalışır. PyQt6
-  masaüstü sürüm aynı veritabanına karşı çalışmaya devam eder; günlük
-  kullanım için gereken tek şey değildir
+  kullanıcı yönetimi, bildirimler, raporlar ve dosya ekleme tarayıcıdan
+  çalışır. PyQt6 masaüstü sürüm aynı veritabanına karşı çalışmaya devam eder
+- **Ek dosyaları:** yerel disk (varsayılan) veya S3 uyumlu nesne depolama —
+  `MAT_STORAGE` ile seçilir
 - **Arayüz dili:** tamamen Türkçe
 
 ---
@@ -24,8 +25,8 @@ performansını raporlardan izler.
 | **1** | PostgreSQL'e geçiş, saat dilimi, çevrimdışı senkron şeması, eşzamanlılık | ✅ **Tamamlandı** |
 | **2** | FastAPI + oturum, arıza listesi/oluşturma/detay, çevrimdışı kuyruk | ✅ **Tamamlandı** |
 | **3** | Panel, makine envanteri, kullanıcılar, bildirimler, raporlar (web) | ✅ **Tamamlandı** |
-| 4 | Ekleri nesne depolamaya (S3/Blob) taşıma | Sırada |
-| 5 | Yayın: HTTPS, ortam değişkenleri, yedek doğrulaması | — |
+| **4** | Ekleri nesne depolamaya (S3/Blob) taşıma, web'den yükleme | ✅ **Tamamlandı** |
+| **5** | Yayın: HTTPS, güvenlik başlıkları, hız sınırı, kurulum kontrolü | ✅ **Tamamlandı** |
 
 **Faz 1'in kabul kriteri:** mevcut masaüstü arayüz, tek satır değişmeden
 PostgreSQL üzerinde çalışmalı. Sağlandı — veri katmanının doğruluğu web kodu
@@ -37,8 +38,17 @@ kayıt kaybolmamalı.** Sağlandı.
 
 **Faz 3'ün kabul kriteri:** bir yönetici, masaüstü sürüme hiç dönmeden
 makine ve kullanıcı yönetebilmeli, raporları görüp Excel'e aktarabilmeli;
-her ekran aynı yetki kısıtlarını sorgu düzeyinde korumalı. Sağlandı — geriye
-yalnızca ek dosyası **yükleme** kaldı (Faz 4).
+her ekran aynı yetki kısıtlarını sorgu düzeyinde korumalı. Sağlandı.
+
+**Faz 4'ün kabul kriteri:** ek dosyaları sunucunun diskine bağlı olmamalı;
+uygulama ikinci bir örnekte çalıştığında da aynı ekler görünmeli ve dosya
+tarayıcıdan yüklenebilmeli. Sağlandı — depolama arka ucu ortam değişkeniyle
+seçilir, veritabanı tarafı değişmez.
+
+**Faz 5'in kabul kriteri:** uygulama internete açıldığında oturum çerezi
+korunmalı, giriş formu sınırsız deneme kabul etmemeli ve yayına çıkan
+kurulumdaki eksikler **çalıştırmadan önce** görülebilmeli. Sağlandı:
+`python tools/yayin_kontrol.py` hata varsa 1 döner.
 
 ---
 
@@ -93,9 +103,8 @@ uvicorn app.web.main:app --host 0.0.0.0 --port 8000
 
 ### 4. Masaüstü arayüz (isteğe bağlı)
 
-Faz 3 ile birlikte web arayüzü tüm ekranları kapsar. Masaüstü sürüm aynı
-veritabanına karşı çalışmaya devam eder; ek dosyası yüklemek için (Faz 4'e
-kadar) hâlâ tek yol odur:
+Web arayüzü tüm ekranları kapsar; masaüstü sürüm aynı veritabanına karşı
+çalışmaya devam eder ve ekleri de aynı depodan okur. Artık zorunlu değildir:
 
 ```bat
 python run.py
@@ -246,7 +255,7 @@ açıklama sayfasına düşer.
 > **HTTPS gereği:** service worker ve `crypto.randomUUID` yalnızca güvenli
 > bağlamda (HTTPS veya `localhost`) çalışır. Düz `http://` ile LAN'da
 > sunulduğunda kuyruk çalışmaya devam eder ama sayfanın kendisi çevrimdışı
-> açılmaz. Faz 5'te HTTPS geldiğinde bu kısıt kalkar.
+> açılmaz. Faz 5'te HTTPS arkasına alınan kurulumda bu kısıt kalkar.
 
 ---
 
@@ -300,13 +309,186 @@ gördüğünüz tablo ile indirdiğiniz dosya aynı kaynaktan üretilir; biri
 değişince diğeri sessizce farklı kalmaz. Dosya geçici bir adla diske yazılır,
 yanıt gönderildikten sonra silinir.
 
-### Web arayüzünde henüz olmayan
+---
 
-| Eksik | Nerede |
+## Faz 4'te ne geldi
+
+### Ekler artık sunucunun diskine bağlı değil
+
+Sorun şuydu: dosyalar sunucunun kendi diskindeydi. Uygulama ikinci bir
+örnekte çalıştığında o disk ortak değildir — birinin yazdığı eki diğeri
+göremez; sunucu yeniden kurulduğunda da ekler gider.
+
+`app/services/storage_service.py` iki arka uç sunar ve seçim `MAT_STORAGE`
+ile yapılır:
+
+| Değer | Nerede saklanır | Ne zaman |
+|---|---|---|
+| `yerel` (varsayılan) | `MAT_DATA_DIR/ekler` | Tek sunucuda çalışan kurulum |
+| `s3` | S3 uyumlu nesne depolama | Birden fazla örnek, kalıcı disk olmayan barındırma |
+
+`s3`, tek bir servisin adı değildir: AWS S3, MinIO, Cloudflare R2 ve
+DigitalOcean Spaces aynı API'yi konuşur, aralarındaki fark yalnızca
+`MAT_S3_ENDPOINT` değeridir. `boto3` **yalnızca bu arka uç seçilirse**
+içe aktarılır; yerel kurulum ek paket istemez.
+
+**Veritabanı tarafı değişmedi.** `attachments.stored_name` her iki arka uçta
+da aynı anahtardır; taşıma yalnızca baytları kopyalar.
+
+### Taşıma sırası
+
+```bat
+set MAT_S3_BUCKET=ariza-ekleri
+python tools\migrate_attachments.py --kuru-calistir   :: ne taşınacak, gör
+python tools\migrate_attachments.py                   :: taşı ve doğrula
+:: sonra .env içinde:  MAT_STORAGE=s3
+```
+
+Önce dosyalar kopyalanır, **sonra** uygulama çevrilir. Tersi yapılırsa geçiş
+sırasında yüklenen ekler eski diskte kalır. Her dosya yazıldıktan sonra
+hedefte doğrulanır — doğrulanmamış kopya kopya sayılmaz. Araç yerel dosyaları
+**silmez**: geri dönüşü olmayan tek adım odur, onu siz yaparsınız.
+
+### Web'den dosya yükleme
+
+Arıza detayında çoklu dosya seçilebilir. Kabul kuralları:
+
+| Kural | Neden |
 |---|---|
-| Ek dosyası **yükleme** (görüntüleme ve indirme var) | Faz 4 — dosyalar nesne depolamaya taşınırken |
+| Uzantı beyaz listesi (`ATTACHMENT_EXTENSIONS`) | Sunucuya çalıştırılabilir dosya yüklenmesinin önü baştan kapansın |
+| Dosya başına 20 MB | Telefonla çekilen fotoğrafı kapsar, sunucuyu doldurmaz |
+| Okuma da 20 MB'ta kesilir | Sınır yalnızca kayıtta değil, belleğe alınan veride de geçerli olsun |
 
-Ek yüklemek için o zamana kadar masaüstü sürüm kullanılır.
+**Depodaki ad sunucuda üretilir.** Tarayıcıdan gelen dosya adı yalnızca
+gösterim içindir; `..\..\gizli.png` gibi bir ad depo dışına yazabilirdi.
+Anahtar `{kayıt no}_{rastgele}.{uzantı}` biçimindedir.
+
+Silme yetkisi: **yükleyen kişi kendi dosyasını**, teknisyen ve yönetici her
+dosyayı siler.
+
+### İndirme neden sunucudan geçiyor
+
+Nesne depolamadaki dosya için imzalı doğrudan bağlantı üretmek daha ucuz
+olurdu; ama o zaman "bu kaydı görebilir mi" kontrolü depoya taşınırdı.
+Dosyaya erişim, bağlı olduğu arıza kaydının görünürlüğüne tabidir ve bu kural
+tek yerde durmalıdır — bu yüzden baytlar sunucudan geçirilir.
+
+### Çevrimdışı kuyruk dosyaları kapsamaz
+
+Yeni arıza kaydı çevrimdışı girilebilir; **dosya yükleme kuyruğa alınmaz.**
+Birkaç MB'lık baytı IndexedDB'de tutup sonra göndermek ayrı bir yeniden
+deneme ve boyut yönetimi demektir; kapsam bilerek dar tutuldu.
+
+---
+
+## Faz 5'te ne geldi
+
+Bu faz yeni ekran getirmez; uygulamayı **internete açılabilir** hale getirir.
+
+### Yayın kontrolü
+
+```bat
+python tools\yayin_kontrol.py
+```
+
+Kurulumdaki eksikleri listeler ve **hata varsa 1 ile çıkar** — dağıtım
+betiğinize koyabilirsiniz. Aynı liste üç yerde görünür: sunucu açılışında
+günlükte, yöneticinin panelinde uyarı kartı olarak ve bu komutta.
+
+| Kontrol | Seviye |
+|---|---|
+| `MAT_SECRET_KEY` tanımlı mı | hata |
+| HTTPS açık mı (`MAT_HTTPS`) | hata |
+| `DATABASE_URL` hâlâ geliştirme varsayılanında mı | hata |
+| Uzak veritabanına `sslmode` verilmiş mi | uyarı |
+| Varsayılan `admin` şifresi duruyor mu | hata |
+| `MAT_STORAGE=s3` ise kova ve `boto3` var mı | hata |
+| Ekler yerel diskte mi | uyarı |
+| Son yedek `MAT_BACKUP_WARN_DAYS`'ten eski mi | uyarı |
+
+Sunucu, hata olsa da **başlar**. Yarı yapılandırılmış bir kurulumda uygulamayı
+hiç açmamak, uyarıyı görüp düzeltecek yöneticinin giriş yapmasını da
+engellerdi.
+
+### HTTPS ve oturum çerezi
+
+`MAT_HTTPS=1` iken çerez `Secure` bayrağıyla gönderilir ve HSTS başlığı
+eklenir. Varsayılan **kapalıdır**: yerel geliştirmede açık olsaydı düz HTTP'de
+çerez hiç gönderilmez, giriş yapılamazdı.
+
+Uygulama kendisi HTTP'den HTTPS'e yönlendirme yapmaz; bu işi TLS'i sonlandıran
+vekil yapar. Yönlendirmeyi uygulamaya koymak, iç ağdan gelen düz HTTP sağlık
+kontrolünü de kırardı.
+
+### Güvenlik başlıkları
+
+Her yanıta eklenir:
+
+| Başlık | Ne yapar |
+|---|---|
+| `Content-Security-Policy` | Satır içi betiği ve dış kaynakları reddeder |
+| `X-Content-Type-Options: nosniff` | Tarayıcının içerik türünü tahmin etmesini engeller |
+| `X-Frame-Options: DENY` | Sayfanın çerçeveye alınmasını (clickjacking) engeller |
+| `Referrer-Policy: same-origin` | Kayıt numaralarının dış sitelere sızmasını engeller |
+| `Permissions-Policy` | Kamera/mikrofon/konum istemediğini beyan eder |
+| `Strict-Transport-Security` | Yalnızca `MAT_HTTPS=1` iken |
+
+CSP satır içi betiğe izin vermediği için şablonlardaki `onclick` ve `onsubmit`
+öznitelikleri kaldırıldı; tablo satırı tıklaması ve onay soruları artık
+`static/etkilesim.js` içinde, olay devriyle çalışıyor. Satır içi **stile**
+bilerek izin verilir: rozet renkleri `style` özniteliğiyle verilir ve bunları
+sınıflara çevirmek politikayı ölçülebilir biçimde güçlendirmezdi.
+
+### Giriş hız sınırı
+
+PBKDF2'nin yavaşlığı deneme saldırısını tek başına durdurmaz. Artık:
+
+- Aynı kullanıcı adına 15 dakikada **5** başarısız deneme → 15 dakika kilit
+- Aynı adresten 15 dakikada **20** başarısız deneme → kilit
+- Başarılı giriş sayacı sıfırlar
+- Kilitlenen istek **429** döner (401 değil): "şifren yanlış" ile "şimdilik
+  denemeyi bırak" farklı şeylerdir ve günlüklerde de öyle görünmelidir
+
+Sayaç **veritabanındadır** (`login_attempts`), bellekte değil: birden fazla
+uygulama örneği çalıştığında bellekteki sayaç örnek sayısıyla çarpılırdı.
+Deneme, kullanıcı adı var olmasa da kaydedilir — aksi halde "kilitlendi"
+yanıtı hesabın varlığını ele verirdi. Kilit `auth_service.unlock()` ile elle
+açılabilir.
+
+### Ters vekil arkasında çalışma
+
+`MAT_TRUST_PROXY=1` yalnızca **kendi** vekilinizin arkasındayken açılmalıdır.
+Açıkken istemci adresi `X-Forwarded-For` başlığından okunur; kapalıyken
+başlık yok sayılır. Kapalı tutulmasaydı, istemci bu başlığı uydurup hız
+sınırını başka bir adresin üzerine yıkabilirdi.
+
+```
+uvicorn app.web.main:app --host 0.0.0.0 --port 8000         --proxy-headers --forwarded-allow-ips="127.0.0.1"
+```
+
+nginx tarafında gereken en az ayar:
+
+```nginx
+location / {
+    proxy_pass         http://127.0.0.1:8000;
+    proxy_set_header   Host $host;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+    client_max_body_size 25m;   # 20 MB ek + çoklu parça payı
+}
+```
+
+### Yayın adımları
+
+1. `.env` dosyasını üretim değerleriyle doldurun (`DATABASE_URL`,
+   `MAT_SECRET_KEY`, `MAT_HTTPS=1`, gerekiyorsa `MAT_STORAGE=s3`).
+2. `python tools/yayin_kontrol.py` — çıkış kodu 0 olana kadar düzeltin.
+3. Ekleri taşıyacaksanız `python tools/migrate_attachments.py` (bkz. Faz 4).
+4. Uygulamayı vekil arkasında uvicorn ile çalıştırın.
+5. Haftalık yedek görevini kurun; `python tools/backup_now.py --durum` ile
+   ilk hafta doğrulayın.
+6. `admin` şifresini değiştirin — panel bunu hata olarak göstermeyi bırakınca
+   kurulum tamamdır.
 
 ---
 
@@ -390,8 +572,10 @@ Sunucuda (Linux) crontab:
 
 ### Yerel dosyalar nerede
 
-Ek dosyaları ve yedekler `Belgeler\MakineArizaTakip\` altındadır
-(`MAT_DATA_DIR` ile değiştirilebilir). Faz 4'te ekler nesne depolamaya taşınacak.
+Yedekler `Belgeler\MakineArizaTakip\yedekler` altındadır (`MAT_DATA_DIR` ile
+değiştirilebilir). Ek dosyaları `MAT_STORAGE=yerel` iken aynı klasörün
+`ekler` alt dizinindedir; `s3` seçildiğinde nesne depolamaya gider ve
+sunucuda yalnızca yedekler kalır.
 
 > `%APPDATA%` bilerek kullanılmıyor: Microsoft Store sürümü Python, AppData
 > yazmalarını paketin sanal klasörüne yönlendirir. Python yolu "var" görür ama
@@ -422,6 +606,8 @@ makine-ariza-takip/
 │   │   ├── fault_service.py    Arıza, durum akışı, log, ekler, idempotency
 │   │   ├── notification_service.py
 │   │   ├── report_service.py   Rapor sorguları
+│   │   ├── storage_service.py  Ek dosyaları: yerel disk / S3  ← Faz 4
+│   │   ├── health_service.py   Kurulum kontrolleri           ← Faz 5
 │   │   └── backup_service.py   pg_dump / pg_restore
 │   │
 │   ├── web/                    Web arayüzü  ← Faz 2 ve 3
@@ -439,6 +625,7 @@ makine-ariza-takip/
 │   │   ├── templates/          Jinja2 şablonları (Türkçe)
 │   │   └── static/
 │   │       ├── app.css
+│   │       ├── etkilesim.js    Satır tıklaması, onay soruları  ← Faz 5
 │   │       ├── kuyruk.js       IndexedDB çevrimdışı kuyruk
 │   │       └── sw.js           Service worker
 │   │
@@ -448,10 +635,12 @@ makine-ariza-takip/
 │       ├── helpers.py          UTC ↔ yerel saat dönüşümleri
 │       └── export.py           Excel / CSV
 │
-├── tests/                      141 test
+├── tests/                      181 test
 └── tools/
     ├── seed_demo.py            Demo verisi
     ├── reset_db.py             Sıfırlama (önce yedek alır)
+    ├── migrate_attachments.py  Ekleri nesne depolamaya taşır  ← Faz 4
+    ├── yayin_kontrol.py        Yayın öncesi kurulum kontrolü  ← Faz 5
     └── backup_now.py           Haftalık yedek
 ```
 
@@ -474,6 +663,7 @@ oldu. `app/web/` altında iş kuralı yoktur — yalnızca HTTP taşıması, otu
 | `attachments` | Yüklenen dosyaların künyesi |
 | `notifications` | Uygulama içi bildirimler |
 | `app_meta` | Şema sürümü ve basit ayarlar |
+| `login_attempts` | Başarısız giriş denemeleri (hız sınırı) |
 
 **Veri bütünlüğü:** arıza kaydı olan makine silinemez (`RESTRICT`); arıza
 silinirse geçmişi ve ekleri de silinir (`CASCADE`); kullanıcı silinirse
@@ -491,7 +681,7 @@ PBKDF2-HMAC-SHA256 (200.000 tur). Sadece standart kütüphane kullanılır.
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-141 test. Her test izole bir test veritabanı kullanır ve şemayı sıfırdan kurar;
+181 test. Her test izole bir test veritabanı kullanır ve şemayı sıfırdan kurar;
 `TEST_DATABASE_URL` adında "test" geçmiyorsa çalışmayı reddeder — üretim
 veritabanının yanlışlıkla silinmesini önlemek için.
 
@@ -519,20 +709,40 @@ geneli sayıların ve başkasının kaydının görünmemesi, bozuk/ters tarih
 aralığının sayfayı düşürmemesi, Excel ve CSV indirmelerinin doğru dosyayı
 üretmesi.
 
+Faz 4 ile gelen 21 test: iki depolama arka ucunun aynı sözleşmeyi yerine
+getirmesi (S3 sahte bir istemciyle sınanır — amaç boto3'ü değil, anahtarın
+doğru üretildiğini doğrulamak), depodaki adın kullanıcının verdiği dosya
+adından üretilmemesi, uzantı/boyut/boş dosya reddi, ek silinince baytların
+da silinmesi, nesne depolamadaki ekin geçici dosyaya inmesi, web'den yükleme
+ve indirmenin uçtan uca çalışması, operatörün başkasının kaydına dosya
+yükleyip indirememesi, CSRF'siz yüklemenin reddi, dosya silme yetkileri ve
+taşıma aracının eksik yerel dosyayı raporlaması.
+
+Faz 5 ile gelen 19 test: art arda başarısız denemenin girişi kilitlemesi ve
+kilitliyken doğru şifrenin de kabul edilmemesi, başarılı girişin sayacı
+sıfırlaması, olmayan kullanıcının da kilitlenmesi (kilit mesajı hesabın
+varlığını ele vermemeli), bir kullanıcının kilidinin diğerini etkilememesi,
+masaüstünün adres vermeden giriş yapabilmesi, güvenlik başlıklarının her
+yanıtta bulunması, HSTS ve `Secure` çerezin yalnızca `MAT_HTTPS=1` iken
+gelmesi, sayfalarda satır içi betik kalmaması, vekil başlığına yalnızca
+güvenildiğinde bakılması ve kurulum kontrollerinin doğru hata/uyarı
+üretmesi.
+
 ---
 
 ## Bilinen kısıtlar
 
-- **Ekler hâlâ yerel diskte.** Faz 4'e kadar sunucuda kalıcı disk gerekir;
-  web arayüzünden yükleme de o zaman gelecek.
-- **Ek yükleme yalnızca masaüstünde.** Web arayüzü ekleri gösterir ve
-  indirir; yükleme Faz 4'te, dosyalar nesne depolamaya taşınırken gelecek.
+- **Yerel depolama seçiliyse ekler sunucunun diskindedir.** Birden fazla
+  uygulama örneği çalıştıracaksanız `MAT_STORAGE=s3` gerekir; yerel diski
+  örnekler paylaşmaz.
+- **Dosya yükleme çevrimdışı kuyruğa alınmaz.** Bağlantı yokken yeni kayıt
+  girilebilir ama ek eklenemez (bkz. Faz 4 notu).
 - **Şifre karmaşıklık kuralı yok** — sadece en az 4 karakter.
-- **Hesap kilitleme yok.** Sınırsız şifre denemesi yapılabilir; PBKDF2'nin
-  yavaşlığı kısmi koruma sağlar ama gerçek bir önlem değildir. Web arayüzü bu
-  yüzeyi internete açtığı için Faz 5'ten önce hız sınırlaması eklenmelidir.
-- **HTTPS yok.** Oturum çerezi `https_only=False` ile gönderilir; Faz 5'te
-  HTTPS arkasına alınınca `True` yapılmalıdır. Service worker de ancak o zaman
-  çalışır (bkz. Faz 2 notu).
+- **Kilit süre esaslıdır, kalıcı değildir.** 15 dakika sonra deneme hakkı
+  yenilenir; hedefli ve sabırlı bir saldırgan için güçlü şifre hâlâ tek
+  gerçek korumadır.
+- **HTTPS'i uygulama sağlamaz.** Sertifika ve yönlendirme, önündeki vekilin
+  işidir; `MAT_HTTPS=1` yalnızca uygulamanın davranışını (çerez, HSTS)
+  değiştirir.
 - **Çevrimdışı koruma yalnızca yeni kayıt girişi içindir.** Listeyi çevrimdışı
   görüntüleme ve durum değiştirme kapsam dışıdır (bkz. yukarıdaki kapsam notu).

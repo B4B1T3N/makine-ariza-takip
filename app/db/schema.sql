@@ -136,3 +136,22 @@ CREATE TABLE IF NOT EXISTS app_meta (
     key   TEXT PRIMARY KEY,
     value TEXT
 );
+
+
+-- Başarısız giriş denemeleri (Faz 5). Hız sınırı buradan hesaplanır.
+-- Bellekte tutulmaz: birden fazla uygulama örneği çalıştığında sayaç
+-- ortak olmalıdır, yoksa saldırgan örnekler arasında dolaşarak sınırı
+-- örnek sayısıyla çarpar.
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id         BIGINT      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    -- Girilen kullanıcı adı (var olmasa bile kaydedilir; aksi halde
+    -- "kilitlendi" yanıtı kullanıcının varlığını ele verirdi).
+    username   CITEXT      NOT NULL,
+    address    TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_attempts_user
+    ON login_attempts(username, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_addr
+    ON login_attempts(address, created_at DESC);

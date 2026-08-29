@@ -100,7 +100,7 @@
     </thead>
     <tbody>
       {% for k in kayitlar %}
-      <tr onclick="window.location='/arizalar/{{ k.id }}'">
+      <tr data-adres="/arizalar/{{ k.id }}">
         <td class="mono">#{{ k.id }}</td>
         <td><a href="/arizalar/{{ k.id }}">{{ k.title }}</a></td>
         <td>{{ k.machine_name }}</td>

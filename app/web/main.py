@@ -66,9 +66,30 @@ def _session_secret() -> str:
     return uretilen
 
 
+def _kurulum_uyarilarini_yaz() -> None:
+    """Açılışta kurulum eksiklerini günlüğe yazar.
+
+    Sunucu yine de başlar: yarı yapılandırılmış bir kurulumda uygulamayı
+    hiç açmamak, uyarıyı görecek yöneticinin giriş yapmasını da engellerdi.
+    """
+    from app.services import health_service
+
+    bulgular = health_service.yayin_kontrolleri()
+    hatalar, uyarilar = health_service.ozet(bulgular)
+    if not bulgular:
+        return
+
+    print(f"Kurulum kontrolü: {hatalar} hata, {uyarilar} uyarı")
+    for bulgu in bulgular:
+        isaret = "HATA " if bulgu["seviye"] == health_service.HATA else "UYARI"
+        print(f"  [{isaret}] {bulgu['baslik']}")
+    print("  Ayrıntı: python tools/yayin_kontrol.py")
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     db.init_db()  # Şema kurulumu idempotenttir.
+    _kurulum_uyarilarini_yaz()
     yield
     db.close_pool()
 
@@ -91,8 +112,13 @@ def create_app() -> FastAPI:
         session_cookie="mat_oturum",
         max_age=SESSION_MAX_AGE,
         same_site="lax",   # Formların başka siteden gönderilmesini engeller.
-        https_only=False,  # Faz 5'te HTTPS arkasına alınınca True yapılacak.
+        # HTTPS arkasında çerez yalnızca güvenli bağlantıda gönderilir.
+        # Yerel geliştirmede kapalıdır: açık olsaydı düz HTTP'de çerez hiç
+        # gönderilmez ve giriş yapılamazdı.
+        https_only=config.https_only(),
     )
+
+    _guvenlik_basliklari(app)
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -137,6 +163,48 @@ def create_app() -> FastAPI:
         )
 
     return app
+
+
+def _guvenlik_basliklari(app: FastAPI) -> None:
+    """Her yanıta tarayıcı tarafındaki korumaları ekler.
+
+    İçerik güvenliği politikası (CSP) satır içi betiğe izin vermez; bu yüzden
+    şablonlardaki `onclick`/`onsubmit` öznitelikleri Faz 5'te
+    `static/etkilesim.js` içine taşındı. Satır içi **stile** izin verilir:
+    rozet renkleri `style` özniteliğiyle verilir ve bunları sınıflara çevirmek
+    politikayı ölçülebilir biçimde güçlendirmezdi.
+    """
+    csp = (
+        "default-src 'self'; "
+        "img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; "
+        "connect-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'none'; "
+        "form-action 'self'; "
+        "frame-ancestors 'none'"
+    )
+
+    @app.middleware("http")
+    async def _basliklar(request: Request, call_next):
+        yanit = await call_next(request)
+        yanit.headers.setdefault("Content-Security-Policy", csp)
+        yanit.headers.setdefault("X-Content-Type-Options", "nosniff")
+        yanit.headers.setdefault("X-Frame-Options", "DENY")
+        yanit.headers.setdefault("Referrer-Policy", "same-origin")
+        # Uygulama kamera/mikrofon/konum istemez; istemediğini söylemek de
+        # eklentiler ve gömülü çerçeveler için bir korumadır.
+        yanit.headers.setdefault(
+            "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
+        )
+        if config.https_only():
+            # Yalnızca HTTPS'teyken: düz HTTP'de gönderilen HSTS başlığı
+            # tarayıcı tarafından yok sayılır ama yanıltıcı olur.
+            yanit.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+        return yanit
 
 
 def _hata_sayfalari(app: FastAPI) -> None:

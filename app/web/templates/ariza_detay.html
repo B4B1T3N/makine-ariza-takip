@@ -69,9 +69,10 @@
       {% endif %}
     </div>
 
-    {% if ekler %}
     <div class="kart">
       <h2>Ekler</h2>
+
+      {% if ekler %}
       <ul class="ek-listesi">
         {% for e in ekler %}
           <li>
@@ -79,12 +80,36 @@
             <span class="soluk kucuk">
               {{ e.uploader_name or "—" }} · {{ h.fmt_datetime(e.created_at) }}
             </span>
+            {% if kullanici.can_change_status or e.uploaded_by == kullanici.id %}
+              <form method="post" action="/ekler/{{ e.id }}/sil"
+                    data-onay="{{ e.file_name }} silinecek. Devam edilsin mi?">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="dugme sade kucuk" type="submit">Sil</button>
+              </form>
+            {% endif %}
           </li>
         {% endfor %}
       </ul>
-      <p class="soluk kucuk">Dosya yükleme web arayüzüne Faz 4'te eklenecek.</p>
+      {% else %}
+        <p class="soluk">Bu kayda henüz dosya eklenmemiş.</p>
+      {% endif %}
+
+      <form method="post" action="/arizalar/{{ ariza.id }}/ek"
+            enctype="multipart/form-data" class="ek-yukle">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <label for="dosya">Dosya ekle</label>
+        <input id="dosya" name="dosya" type="file" multiple
+               accept="{{ cfg.ATTACHMENT_EXTENSIONS | join(',') }}">
+        <button class="dugme" type="submit">Yükle</button>
+      </form>
+
+      <p class="soluk kucuk">
+        Fotoğraf, PDF ve ofis dosyaları kabul edilir; dosya başına en fazla
+        {{ cfg.ATTACHMENT_MAX_BYTES // (1024 * 1024) }} MB.
+        Yükleme çevrimdışı kuyruğa alınmaz — bağlantı yokken dosya eklemek
+        için bağlantının gelmesini bekleyin.
+      </p>
     </div>
-    {% endif %}
 
     <div class="kart">
       <h2>Geçmiş</h2>

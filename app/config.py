@@ -104,6 +104,53 @@ def backups_dir() -> Path:
     return path
 
 
+# --- Ek dosyaları ve nesne depolama (Faz 4) -------------------------------
+STORAGE_LOCAL = "yerel"
+STORAGE_S3 = "s3"
+
+
+def storage_backend() -> str:
+    """Ek dosyalarının nerede tutulacağı: `yerel` veya `s3`.
+
+    Varsayılan yereldir; tek sunucuda çalışan bir kurulum hiçbir şey
+    tanımlamadan çalışmaya devam eder. `s3`, S3 uyumlu her servisi kapsar
+    (AWS S3, MinIO, Cloudflare R2, DigitalOcean Spaces) — fark yalnızca
+    `MAT_S3_ENDPOINT` değeridir.
+    """
+    secim = os.environ.get("MAT_STORAGE", STORAGE_LOCAL).strip().lower()
+    return STORAGE_S3 if secim in ("s3", "blob", "nesne") else STORAGE_LOCAL
+
+
+def s3_settings() -> dict:
+    """S3 arka ucunun ayarları. Kimlik bilgileri ortam değişkenlerinden gelir."""
+    return {
+        "bucket": os.environ.get("MAT_S3_BUCKET", ""),
+        # Boş bırakılırsa AWS'nin kendi adresi kullanılır. MinIO/R2/Spaces
+        # için buraya servisin adresi yazılır.
+        "endpoint": os.environ.get("MAT_S3_ENDPOINT", "") or None,
+        "region": os.environ.get("MAT_S3_REGION", "") or None,
+        "access_key": os.environ.get("MAT_S3_ACCESS_KEY", "") or None,
+        "secret_key": os.environ.get("MAT_S3_SECRET_KEY", "") or None,
+        # Kovanın içinde ekleri tek klasörde toplar; aynı kova başka bir iş
+        # için de kullanılıyorsa karışmaz.
+        "prefix": os.environ.get("MAT_S3_PREFIX", "ekler").strip("/"),
+    }
+
+
+# Ek dosyası üst sınırı. Atölyede telefonla çekilen fotoğraf birkaç MB'tır;
+# 20 MB video olmayan her makul eki kapsar ve sunucuyu doldurmaz.
+ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
+
+# İzin verilen uzantılar. Beyaz liste tutulur: sunucuya çalıştırılabilir
+# dosya yüklenmesinin önü baştan kapansın.
+ATTACHMENT_EXTENSIONS = (
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".bmp",
+    ".pdf", ".txt", ".csv", ".log",
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".zip", ".mp4", ".mov",
+)
+
+
 # --- Roller ---------------------------------------------------------------
 ROLE_OPERATOR = "operator"
 ROLE_TECHNICIAN = "teknisyen"
@@ -214,3 +261,44 @@ DATE_FMT = "%d.%m.%Y"
 # Veritabanı UTC saklar; kullanıcıya ve raporlara bu saat diliminde gösterilir.
 # Rapor gün sınırları da bu dilime göre hesaplanır.
 APP_TIMEZONE = os.environ.get("MAT_TIMEZONE", "Europe/Istanbul")
+
+
+# --- Yayın ayarları (Faz 5) -----------------------------------------------
+def _bayrak(ad: str, varsayilan: bool = False) -> bool:
+    deger = os.environ.get(ad)
+    if deger is None:
+        return varsayilan
+    return deger.strip().lower() in ("1", "true", "evet", "acik", "on", "yes")
+
+
+def https_only() -> bool:
+    """Uygulama HTTPS arkasında mı çalışıyor.
+
+    Açıkken oturum çerezi yalnızca güvenli bağlantıda gönderilir ve HSTS
+    başlığı eklenir. Düz HTTP ile çalışan yerel geliştirmede kapalıdır —
+    açık olsaydı çerez hiç gönderilmez, giriş yapılamazdı.
+    """
+    return _bayrak("MAT_HTTPS", False)
+
+
+def trust_proxy() -> bool:
+    """`X-Forwarded-For` / `X-Forwarded-Proto` başlıklarına güvenilsin mi.
+
+    Yalnızca uygulamanın önünde kendi ters vekiliniz (nginx, Caddy, bulut
+    yük dengeleyici) varken açılmalıdır. Aksi halde istemci bu başlıkları
+    kendisi uydurup hız sınırını başka bir adresin üzerine yıkabilir.
+    """
+    return _bayrak("MAT_TRUST_PROXY", False)
+
+
+# Giriş hız sınırı: aynı kullanıcı adına art arda kaç başarısız deneme
+# yapılabileceği ve sayacın kaç dakikada sıfırlandığı.
+LOGIN_MAX_ATTEMPTS = int(os.environ.get("MAT_LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_WINDOW_MINUTES = int(os.environ.get("MAT_LOGIN_WINDOW_MINUTES", "15"))
+# Aynı ağ adresinden gelen toplam başarısız deneme sınırı: saldırgan
+# kullanıcı adı deneyerek sınırın etrafından dolaşmasın.
+LOGIN_MAX_PER_ADDRESS = int(os.environ.get("MAT_LOGIN_MAX_PER_ADDRESS", "20"))
+
+# Yedek bu yaşı geçtiyse yöneticiye uyarı gösterilir. Haftalık periyoda bir
+# günlük pay eklenmiştir; zamanlanmış görev bir gün gecikse de bağırmasın.
+BACKUP_WARN_DAYS = int(os.environ.get("MAT_BACKUP_WARN_DAYS", "8"))

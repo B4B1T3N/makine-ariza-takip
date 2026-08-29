@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from app import config
-from app.services import fault_service, report_service
+from app.services import fault_service, health_service, report_service
 from app.web import deps
 
 router = APIRouter()
@@ -94,5 +94,10 @@ def panel(request: Request):
             "en_cok_arizalanan": report_service.top_machines(limit=5),
             "liste_basligi": liste_basligi,
             "kayitlar": kayitlar,
+            # Kurulum uyarıları yalnızca yöneticiye gösterilir: düzeltecek
+            # olan odur ve içerikleri kurulumun zayıf noktalarını anlatır.
+            "yayin_bulgulari": (
+                health_service.yayin_kontrolleri() if user.is_manager else []
+            ),
         },
     )

@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 import psycopg
 
 from app import config
 from app.db import database as db
 from app.utils import security
+from app.utils.helpers import now_utc
 
 # Türkçe harf sıralaması (İ, ı, ş, ğ, ç, ö, ü) için ICU sıralaması.
 TR_COLLATE = 'COLLATE "tr-TR-x-icu"'
@@ -68,19 +70,31 @@ class CurrentUser:
         return self.is_manager or self.is_technician
 
 
-def login(username: str, password: str) -> CurrentUser:
+def login(username: str, password: str, address: str | None = None) -> CurrentUser:
+    """Kimlik doğrular; art arda başarısız denemeleri sınırlar.
+
+    `address` web arayüzünden gelen istemci adresidir. Masaüstü arayüz
+    vermez — orada saldırı yüzeyi ağ değil, makinenin kendisidir.
+    """
     username = (username or "").strip()
     if not username or not password:
         raise AuthError("Kullanıcı adı ve şifre giriniz.")
+
+    _kilit_kontrolu(username, address)
 
     # username sütunu CITEXT olduğu için karşılaştırma harf duyarsızdır.
     row = db.query_one("SELECT * FROM users WHERE username = %s", (username,))
     if row is None or not security.verify_password(
         password, row["salt"], row["password_hash"]
     ):
+        _basarisiz_deneme_kaydet(username, address)
         raise AuthError("Kullanıcı adı veya şifre hatalı.")
     if not row["is_active"]:
         raise AuthError("Bu kullanıcı pasif durumda. Yöneticinize başvurun.")
+
+    # Başarılı giriş sayacı sıfırlar: gün içinde birkaç kez yanlış yazan
+    # gerçek kullanıcı, doğru şifreyi girdiği anda temiz sayfa açar.
+    db.execute("DELETE FROM login_attempts WHERE username = %s", (username,))
 
     return CurrentUser(
         id=row["id"],
@@ -88,6 +102,75 @@ def login(username: str, password: str) -> CurrentUser:
         full_name=row["full_name"],
         role=row["role"],
     )
+
+
+# --- Giriş hız sınırı -----------------------------------------------------
+# Şifre saklama PBKDF2 ile yavaşlatılmıştır ama bu tek başına deneme
+# saldırısını durdurmaz: web arayüzü giriş formunu internete açtığı için
+# denemelerin kendisi de sınırlanmalıdır.
+class LoginLocked(AuthError):
+    """Çok fazla başarısız deneme yapıldı; giriş geçici olarak kapalı."""
+
+
+def _pencere_baslangici() -> datetime:
+    return now_utc() - timedelta(minutes=config.LOGIN_WINDOW_MINUTES)
+
+
+def _kilit_kontrolu(username: str, address: str | None) -> None:
+    baslangic = _pencere_baslangici()
+
+    # Sayaç kullanıcı adına bakılır; kullanıcı var olmasa da kaydedilir,
+    # yoksa "kilitlendi" yanıtı hesabın varlığını ele verirdi.
+    kullanici_deneme = db.scalar(
+        """SELECT COUNT(*) FROM login_attempts
+            WHERE username = %s AND created_at >= %s""",
+        (username, baslangic),
+    )
+    if kullanici_deneme >= config.LOGIN_MAX_ATTEMPTS:
+        raise LoginLocked(_kilit_mesaji())
+
+    if address:
+        adres_deneme = db.scalar(
+            """SELECT COUNT(*) FROM login_attempts
+                WHERE address = %s AND created_at >= %s""",
+            (address, baslangic),
+        )
+        if adres_deneme >= config.LOGIN_MAX_PER_ADDRESS:
+            raise LoginLocked(_kilit_mesaji())
+
+
+def _kilit_mesaji() -> str:
+    return (
+        "Çok fazla başarısız giriş denemesi yapıldı. "
+        f"{config.LOGIN_WINDOW_MINUTES} dakika sonra tekrar deneyin."
+    )
+
+
+def _basarisiz_deneme_kaydet(username: str, address: str | None) -> None:
+    db.execute(
+        "INSERT INTO login_attempts (username, address) VALUES (%s, %s)",
+        (username, address),
+    )
+    # Tablo süresiz büyümesin: pencerenin çok gerisinde kalan kayıtlar
+    # kimseye lazım değil.
+    db.execute(
+        "DELETE FROM login_attempts WHERE created_at < %s",
+        (now_utc() - timedelta(minutes=config.LOGIN_WINDOW_MINUTES * 4),),
+    )
+
+
+def failed_attempts(username: str) -> int:
+    """Pencere içindeki başarısız deneme sayısı (yönetim ekranları için)."""
+    return db.scalar(
+        """SELECT COUNT(*) FROM login_attempts
+            WHERE username = %s AND created_at >= %s""",
+        (username, _pencere_baslangici()),
+    )
+
+
+def unlock(username: str) -> None:
+    """Yöneticinin kilidi elle açması için."""
+    db.execute("DELETE FROM login_attempts WHERE username = %s", (username,))
 
 
 # --- Kullanıcı yönetimi ---------------------------------------------------

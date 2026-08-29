@@ -16,7 +16,7 @@
     </thead>
     <tbody>
       {% for k in kayitlar %}
-      <tr onclick="window.location='/arizalar/{{ k.id }}'">
+      <tr data-adres="/arizalar/{{ k.id }}">
         <td class="mono">#{{ k.id }}</td>
         <td>{{ k.machine_name }}</td>
         <td><a href="/arizalar/{{ k.id }}">{{ k.title }}</a></td>
@@ -63,6 +63,30 @@
   </div>
   <a class="dugme birincil" href="/arizalar/yeni">+ Yeni Arıza</a>
 </div>
+
+{% if yayin_bulgulari %}
+<div class="kart kurulum-uyarilari">
+  <h2>Kurulum kontrolü</h2>
+  <ul class="bulgu-listesi">
+    {% for b in yayin_bulgulari %}
+      <li class="{{ b.seviye }}">
+        <span class="rozet"
+              style="background: {% if b.seviye == 'hata' %}{{ cfg.STATUS_COLORS[cfg.STATUS_OPEN] }}{% else %}{{ cfg.PRIORITY_COLORS[cfg.PRIORITY_MEDIUM] }}{% endif %}">
+          {% if b.seviye == 'hata' %}Hata{% else %}Uyarı{% endif %}
+        </span>
+        <span>
+          <strong>{{ b.baslik }}</strong>
+          <span class="soluk kucuk">{{ b.cozum }}</span>
+        </span>
+      </li>
+    {% endfor %}
+  </ul>
+  <p class="soluk kucuk">
+    Bu liste yalnızca yöneticilere görünür. Ayrıntı için sunucuda
+    <code>python tools/yayin_kontrol.py</code> çalıştırın.
+  </p>
+</div>
+{% endif %}
 
 {% if kisisel %}
   <div class="kart-izgara">
@@ -137,7 +161,7 @@
         </thead>
         <tbody>
           {% for m in en_cok_arizalanan %}
-          <tr onclick="window.location='/makineler/{{ m.id }}'">
+          <tr data-adres="/makineler/{{ m.id }}">
             <td><a href="/makineler/{{ m.id }}">{{ m.name }}</a></td>
             <td class="mono">{{ m.fault_count }}</td>
             <td class="mono">{{ m.open_count }}</td>

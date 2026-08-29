@@ -1,14 +1,13 @@
 """Arıza kayıtları: oluşturma, filtreleme, durum akışı, geçmiş ve ekler."""
 from __future__ import annotations
 
-import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
 
 from app import config
 from app.db import database as db
-from app.services import notification_service
+from app.services import notification_service, storage_service
 from app.utils.helpers import now_utc, to_utc
 
 
@@ -394,30 +393,55 @@ def assign(fault_id: int, user_id: int, assignee_id: int | None) -> None:
 
 
 # --- Ekler ----------------------------------------------------------------
+# Dosyanın nerede durduğunu `storage_service` bilir: yerel disk ya da nesne
+# depolama. Buradaki kod ikisini de aynı şekilde çağırır; veritabanındaki
+# `stored_name` her iki arka uçta da aynı anahtardır.
 def add_attachment(fault_id: int, user_id: int, source_path: str) -> int:
-    """Dosyayı ek olarak kaydeder.
-
-    Faz 1'de dosyalar hâlâ yerel klasörde tutulur; Faz 4'te nesne depolamaya
-    (S3/Blob) taşınacak. Veritabanı tarafı o geçişte değişmeyecek.
-    """
+    """Diskteki bir dosyayı ek olarak kaydeder (masaüstü arayüz bunu çağırır)."""
     src = Path(source_path)
     if not src.is_file():
         raise FaultError("Dosya bulunamadı.")
-    if src.stat().st_size > 20 * 1024 * 1024:
-        raise FaultError("Dosya boyutu 20 MB'ı aşamaz.")
+    if src.stat().st_size > config.ATTACHMENT_MAX_BYTES:
+        raise FaultError(_boyut_mesaji())
 
-    stored_name = f"{fault_id}_{uuid.uuid4().hex[:8]}{src.suffix.lower()}"
-    shutil.copy2(src, config.attachments_dir() / stored_name)
+    stored_name = _stored_name(fault_id, src.name)
+    try:
+        storage_service.kopyala(src, stored_name)
+    except storage_service.StorageError as exc:
+        raise FaultError(str(exc)) from exc
 
-    with db.transaction():
-        att_id = db.insert(
-            """INSERT INTO attachments (fault_id, file_name, stored_name, uploaded_by)
-               VALUES (%s, %s, %s, %s)""",
-            (fault_id, src.name, stored_name, user_id),
+    return _kaydi_yaz(fault_id, user_id, src.name, stored_name)
+
+
+def add_attachment_bytes(
+    fault_id: int, user_id: int, file_name: str, data: bytes
+) -> int:
+    """Yüklenen baytları ek olarak kaydeder (web arayüzü bunu çağırır).
+
+    Dosya adı kullanıcıdan gelir ve **yalnızca gösterim içindir**; depodaki
+    anahtar sunucuda üretilir. Aksi halde `../` içeren bir ad depo dışına
+    yazabilirdi.
+    """
+    if not data:
+        raise FaultError("Boş dosya yüklenemez.")
+    if len(data) > config.ATTACHMENT_MAX_BYTES:
+        raise FaultError(_boyut_mesaji())
+
+    gosterilen = _temiz_dosya_adi(file_name)
+    uzanti = Path(gosterilen).suffix.lower()
+    if uzanti not in config.ATTACHMENT_EXTENSIONS:
+        raise FaultError(
+            f"'{uzanti or gosterilen}' türünde dosya kabul edilmiyor. "
+            "İzin verilenler: " + ", ".join(config.ATTACHMENT_EXTENSIONS)
         )
-        _add_log(fault_id, user_id, config.LOG_ATTACHMENT,
-                 new_value=src.name, note=src.name)
-    return att_id
+
+    stored_name = _stored_name(fault_id, gosterilen)
+    try:
+        storage_service.yaz(stored_name, data)
+    except storage_service.StorageError as exc:
+        raise FaultError(str(exc)) from exc
+
+    return _kaydi_yaz(fault_id, user_id, gosterilen, stored_name)
 
 
 def list_attachments(fault_id: int) -> list[dict]:
@@ -431,21 +455,74 @@ def list_attachments(fault_id: int) -> list[dict]:
     )
 
 
+def get_attachment(attachment_id: int) -> dict | None:
+    return db.query_one("SELECT * FROM attachments WHERE id = %s", (attachment_id,))
+
+
 def attachment_path(stored_name: str) -> Path:
+    """Ekin yerel dosya yolu.
+
+    Yalnızca yerel arka uçta anlamlıdır. Nesne depolamada dosyanın yerel bir
+    yolu yoktur; açılabilir bir kopya için `attachment_file()` kullanılır.
+    """
     return config.attachments_dir() / stored_name
 
 
+def attachment_file(attachment_id: int) -> Path:
+    """Eki açılabilir bir yola indirir ve o yolu döner."""
+    row = get_attachment(attachment_id)
+    if row is None:
+        raise FaultError("Dosya bulunamadı.")
+    try:
+        return storage_service.gecici_kopya(row["stored_name"], row["file_name"])
+    except storage_service.StorageError as exc:
+        raise FaultError(str(exc)) from exc
+
+
+def attachment_bytes(attachment_id: int) -> bytes:
+    row = get_attachment(attachment_id)
+    if row is None:
+        raise FaultError("Dosya bulunamadı.")
+    try:
+        return storage_service.oku(row["stored_name"])
+    except storage_service.StorageError as exc:
+        raise FaultError(str(exc)) from exc
+
+
 def delete_attachment(attachment_id: int) -> None:
-    row = db.query_one("SELECT * FROM attachments WHERE id = %s", (attachment_id,))
+    row = get_attachment(attachment_id)
     if row is None:
         return
-    path = attachment_path(row["stored_name"])
-    if path.exists():
-        try:
-            path.unlink()
-        except OSError:
-            pass  # Dosya kilitliyse kayıt yine de silinsin.
+    storage_service.sil(row["stored_name"])
     db.execute("DELETE FROM attachments WHERE id = %s", (attachment_id,))
+
+
+def _stored_name(fault_id: int, file_name: str) -> str:
+    """Depodaki anahtar: kayıt numarası + rastgele ek + uzantı."""
+    uzanti = Path(file_name).suffix.lower()
+    return f"{fault_id}_{uuid.uuid4().hex[:8]}{uzanti}"
+
+
+def _temiz_dosya_adi(file_name: str) -> str:
+    """Tarayıcıdan gelen adın yalnızca son parçasını alır."""
+    ad = (file_name or "").replace("\\", "/").split("/")[-1].strip()
+    return ad or "dosya"
+
+
+def _boyut_mesaji() -> str:
+    return f"Dosya boyutu {config.ATTACHMENT_MAX_BYTES // (1024 * 1024)} MB'ı aşamaz."
+
+
+def _kaydi_yaz(fault_id: int, user_id: int, file_name: str, stored_name: str) -> int:
+    with db.transaction():
+        att_id = db.insert(
+            """INSERT INTO attachments (fault_id, file_name, stored_name, uploaded_by)
+               VALUES (%s, %s, %s, %s)""",
+            (fault_id, file_name, stored_name, user_id),
+        )
+        _add_log(fault_id, user_id, config.LOG_ATTACHMENT,
+                 new_value=file_name, note=file_name)
+    return att_id
 
 
 # --- Yardımcı -------------------------------------------------------------

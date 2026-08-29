@@ -186,13 +186,13 @@ def test_filtreler_ve_sayfalama(istemci, users, machines):
 
     ilk = istemci.get("/arizalar").text
     assert "30 kayıt bulundu" in ilk
-    assert ilk.count('<tr onclick') == 25
+    assert ilk.count('<tr data-adres') == 25
 
     ikinci = istemci.get("/arizalar?sayfa=2").text
-    assert ikinci.count('<tr onclick') == 5
+    assert ikinci.count('<tr data-adres') == 5
 
     # Var olmayan sayfa son sayfaya sabitlenir, boş liste dönmez.
-    assert istemci.get("/arizalar?sayfa=99").text.count('<tr onclick') == 5
+    assert istemci.get("/arizalar?sayfa=99").text.count('<tr data-adres') == 5
 
     # Geçersiz filtre değeri sorguya taşınmamalı.
     assert istemci.get("/arizalar?durum=olmayan-durum").status_code == 200
