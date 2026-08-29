@@ -1,97 +1,223 @@
 {% extends "taban.html" %}
-{% block baslik %}Makineler{% endblock %}
+{% block baslik %}Makine Envanteri{% endblock %}
+{% block ek_stil %}<link rel="stylesheet" href="/static/envanter.css">{% endblock %}
+
+{% macro konum_etiketi(deger) -%}
+  {% set durum = ms.konum_durumu(deger) %}
+  {% if durum == 'atanmadi' %}
+    <span class="env-etiket atanmadi">atanmadı</span>
+  {% else %}
+    <span class="env-etiket {{ durum }}">{{ deger }}</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro elektrik(m) -%}
+  {% if m.voltage or m.power_kw or m.amperage or m.phase %}
+    {{ m.voltage or "—" }}{% if m.phase %} / {{ m.phase }}F{% endif %}
+    <div class="alt tek">
+      {%- if m.power_kw %}{{ "%g" | format(m.power_kw) }} kW{% endif -%}
+      {%- if m.amperage %} · {{ m.amperage }} A{% endif -%}
+    </div>
+  {% else %}
+    <span class="env-etiket atanmadi">veri yok</span>
+  {% endif %}
+{%- endmacro %}
+
+{% macro sutun_basligi(anahtar, etiket) -%}
+  {% if durum.sirala == anahtar %}
+    <a href="{{ durum.adres(sirala=anahtar, yon='' if durum.ters else 'ters') }}">
+      {{ etiket }} {{ '▼' if durum.ters else '▲' }}</a>
+  {% else %}
+    <a href="{{ durum.adres(sirala=anahtar, yon='') }}">{{ etiket }}</a>
+  {% endif %}
+{%- endmacro %}
 
 {% block icerik %}
-<div class="sayfa-basi">
-  <h1>Makine Envanteri</h1>
-  {% if yonetebilir %}
-    <a class="dugme birincil" href="/makineler/yeni">+ Yeni Makine</a>
-  {% endif %}
-</div>
+<div class="env">
 
-<form class="filtre" method="get" action="/makineler">
-  <div class="filtre-satir">
-    <div class="alan buyuk">
-      <label for="arama">Ara</label>
-      <input id="arama" name="arama" value="{{ secili.arama }}"
-             placeholder="Makine adı, seri no veya konum">
+  <div class="env-ray">
+    <div class="marka">
+      <div class="isaret">EK</div>
+      <div>
+        <h1>Makine Envanteri</h1>
+        <p class="alt">{{ ozet.kayit }} kayıt · {{ "%.1f" | format(ozet.guc) }} kW kurulu güç</p>
+      </div>
     </div>
 
-    <div class="alan">
-      <label for="kategori">Kategori</label>
-      <select id="kategori" name="kategori">
-        <option value="">Tümü</option>
-        {% for k in kategoriler %}
-          <option value="{{ k }}" {% if secili.kategori == k %}selected{% endif %}>{{ k }}</option>
-        {% endfor %}
-      </select>
+    <form class="env-ara" method="get" action="/makineler">
+      {% for ad, deger in durum.parametreler() %}
+        {% if ad != 'ara' %}<input type="hidden" name="{{ ad }}" value="{{ deger }}">{% endif %}
+      {% endfor %}
+      <label for="ara" class="gizli-etiket">Ara</label>
+      <input id="ara" name="ara" type="search" value="{{ durum.arama }}"
+             placeholder="Tezgah adı, makina kodu, seri no, üretici…">
+      <button class="env-dugme" type="submit">Ara</button>
+    </form>
+
+    {% if yonetebilir %}
+      <a class="env-dugme sari" href="/makineler/yeni">+ Makine ekle</a>
+    {% endif %}
+  </div>
+
+  <div class="env-sayilar">
+    <div><b>{{ ozet.kayit }}</b><span class="lbl">Kayıt</span></div>
+    <div><b>{{ "%.1f" | format(ozet.guc) }} kW</b><span class="lbl">Kurulu güç</span></div>
+    <div><b>{{ ozet.bolum }}</b><span class="lbl">Bölüm</span></div>
+    <div><b>{{ ozet.bina }}</b><span class="lbl">Bina</span></div>
+    <div class="{% if ozet.konumsuz %}uyari{% endif %}">
+      <b>{{ ozet.konumsuz }}</b><span class="lbl">Konumu atanmamış</span>
     </div>
-
-    <fieldset class="kutucuklar">
-      <legend>Görünüm</legend>
-      <label class="kutucuk">
-        <input type="checkbox" name="pasifler" value="1"
-               {% if secili.pasifler %}checked{% endif %}>
-        Pasif makineleri de göster
-      </label>
-    </fieldset>
-
-    <div class="filtre-dugmeler">
-      <button class="dugme birincil" type="submit">Filtrele</button>
-      <a class="dugme sade" href="/makineler">Temizle</a>
+    <div class="{% if ozet.arizali %}uyari{% endif %}">
+      <b>{{ ozet.arizali }}</b><span class="lbl">Açık arızalı</span>
     </div>
   </div>
-</form>
 
-<p class="soluk sonuc-sayisi">{{ makineler | length }} makine listeleniyor</p>
-
-{% if makineler %}
-<div class="tablo-sarmal">
-  <table class="tablo">
-    <thead>
-      <tr>
-        <th>Makine</th>
-        <th>Seri No</th>
-        <th>Konum</th>
-        <th>Kategori</th>
-        <th>Açık arıza</th>
-        <th>Toplam arıza</th>
-        <th>Durum</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for m in makineler %}
-      <tr data-adres="/makineler/{{ m.id }}">
-        <td><a href="/makineler/{{ m.id }}">{{ m.name }}</a></td>
-        <td class="mono">{{ m.serial_no or "—" }}</td>
-        <td>{{ m.location or "—" }}</td>
-        <td>{{ m.category or "—" }}</td>
-        <td class="mono">
-          {% if m.open_faults %}
-            <span class="rozet" style="background: {{ cfg.STATUS_COLORS[cfg.STATUS_OPEN] }}">
-              {{ m.open_faults }}
-            </span>
-          {% else %}0{% endif %}
-        </td>
-        <td class="mono">{{ m.total_faults }}</td>
-        <td>
-          {% if m.is_active %}
-            <span class="rozet" style="background: {{ cfg.STATUS_COLORS[cfg.STATUS_RESOLVED] }}">Aktif</span>
-          {% else %}
-            <span class="rozet rol">Pasif</span>
+  <div class="env-govde">
+    <aside class="env-filtre">
+      {% for panel in paneller %}
+        <div class="grup">
+          <div class="baslik">
+            <span class="lbl">{{ panel.etiket }}</span>
+            {% if panel.secili_sayisi %}
+              <a class="temizle" href="{{ panel.temizle_adresi }}">TEMİZLE</a>
+            {% endif %}
+          </div>
+          {% for s in panel.secenekler %}
+            <a class="env-secenek {% if s.secili %}acik{% endif %}" href="{{ s.adres }}">
+              <span class="kutu">{% if s.secili %}✕{% endif %}</span>
+              <span class="ad" title="{{ s.deger }}">{{ s.deger }}</span>
+              <span class="adet">{{ s.adet }}</span>
+            </a>
+          {% endfor %}
+          {% if not panel.secenekler %}
+            <p class="lbl">kayıt yok</p>
           {% endif %}
-        </td>
-      </tr>
+        </div>
       {% endfor %}
-    </tbody>
-  </table>
+    </aside>
+
+    <main>
+      <div class="env-arac">
+        <div class="env-secim">
+          <a class="{% if durum.gorunum == 'tablo' %}acik{% endif %}"
+             href="{{ durum.adres(gorunum='tablo') }}">Tablo</a>
+          <a class="{% if durum.gorunum == 'kart' %}acik{% endif %}"
+             href="{{ durum.adres(gorunum='kart') }}">Kart</a>
+        </div>
+
+        <span class="lbl">Sırala</span>
+        <div class="env-secim">
+          {% for anahtar, bilgi in siralamalar.items() %}
+            <a class="{% if durum.sirala == anahtar %}acik{% endif %}"
+               href="{{ durum.adres(sirala=anahtar) }}">{{ bilgi[0] }}</a>
+          {% endfor %}
+        </div>
+        <a class="env-hap" href="{{ durum.adres(yon='' if durum.ters else 'ters') }}">
+          {{ '↓ Azalan' if durum.ters else '↑ Artan' }}
+        </a>
+
+        <span class="env-bosluk"></span>
+
+        <a class="env-hap {% if durum.konumsuz %}acik{% endif %}"
+           href="{{ durum.adres(konumsuz='' if durum.konumsuz else '1') }}">Yeni konumu boş</a>
+        <a class="env-hap {% if durum.elektriksiz %}acik{% endif %}"
+           href="{{ durum.adres(elektriksiz='' if durum.elektriksiz else '1') }}">Elektrik verisi eksik</a>
+        <a class="env-hap {% if durum.pasifler %}acik{% endif %}"
+           href="{{ durum.adres(pasifler='' if durum.pasifler else '1') }}">Pasifler dahil</a>
+      </div>
+
+      {% if cipler %}
+        <div class="env-cipler">
+          {% for c in cipler %}
+            <a class="env-cip" href="{{ c.adres }}">
+              <span class="lbl">{{ c.etiket }}</span>
+              <b>{{ c.deger }}</b><span class="kapat">✕</span>
+            </a>
+          {% endfor %}
+          <a class="env-cip" href="{{ durum.adres(temizle=1) }}">
+            <span class="kapat">Tümünü temizle</span>
+          </a>
+        </div>
+      {% endif %}
+
+      {% if not makineler %}
+        <div class="env-bos">
+          <b>Bu filtrelerle eşleşen ekipman yok</b>
+          Bir filtreyi kaldırın veya aramayı sadeleştirin.
+        </div>
+
+      {% elif durum.gorunum == 'kart' %}
+        <div class="env-kartlar">
+          {% for m in makineler %}
+            <a class="env-kart {% if not m.is_active %}pasif{% endif %}"
+               href="/makineler/{{ m.id }}">
+              <h4>{{ m.name }}</h4>
+              <div class="alt">{{ m.location or "—" }}{% if m.model %} · {{ m.model }}{% endif %}</div>
+              <div style="margin-top:8px">{{ konum_etiketi(m.new_location) }}
+                {% if m.open_faults %}
+                  <span class="env-etiket ariza">{{ m.open_faults }} açık arıza</span>
+                {% endif %}
+              </div>
+              <div class="satir">
+                <span class="tek">{{ m.machine_code or m.asset_no or "kodsuz" }}</span>
+                <span class="tek">{% if m.power_kw %}{{ "%g" | format(m.power_kw) }} kW{% else %}—{% endif %}</span>
+              </div>
+            </a>
+          {% endfor %}
+        </div>
+
+      {% else %}
+        <div class="env-tablo-sarmal">
+          <table class="env-tablo">
+            <thead>
+              <tr>
+                <th style="width:38px">#</th>
+                <th>{{ sutun_basligi('ad', 'Tezgah / ekipman') }}</th>
+                <th>{{ sutun_basligi('bolum', 'Bölüm') }}</th>
+                <th>{{ sutun_basligi('bina', 'Bina') }}</th>
+                <th>{{ sutun_basligi('tip', 'Tip') }}</th>
+                <th>Kod</th>
+                <th>Yeni konum</th>
+                <th>Elektrik</th>
+                <th>{{ sutun_basligi('yil', 'Yıl') }}</th>
+                <th>{{ sutun_basligi('ariza', 'Arıza') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in makineler %}
+                <tr data-adres="/makineler/{{ m.id }}"
+                    class="{% if not m.is_active %}pasif{% endif %}">
+                  <td class="sira">{{ loop.index }}</td>
+                  <td>
+                    <div class="ad"><a href="/makineler/{{ m.id }}">{{ m.name }}</a></div>
+                    <div class="alt">{{ m.definition or m.model or "" }}</div>
+                  </td>
+                  <td>
+                    {{ m.location or "—" }}
+                    <div class="alt">{{ m.physical_area or "" }}</div>
+                  </td>
+                  <td>{{ m.building or "—" }}</td>
+                  <td>{% if m.category %}<span class="env-etiket">{{ m.category }}</span>{% endif %}</td>
+                  <td class="tek">
+                    {{ m.machine_code or "" }}
+                    {% if m.asset_no %}<div class="alt tek">{{ m.asset_no }}</div>{% endif %}
+                  </td>
+                  <td>{{ konum_etiketi(m.new_location) }}</td>
+                  <td class="tek">{{ elektrik(m) }}</td>
+                  <td class="tek">{{ m.production_year or "" }}</td>
+                  <td class="tek">
+                    {% if m.open_faults %}
+                      <span class="env-etiket ariza">{{ m.open_faults }}</span>
+                    {% else %}—{% endif %}
+                    {% if m.total_faults %}<div class="alt tek">{{ m.total_faults }} toplam</div>{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+    </main>
+  </div>
 </div>
-{% else %}
-<div class="bos">
-  <p>Bu filtrelere uyan makine yok.</p>
-  {% if yonetebilir %}
-    <a class="dugme birincil" href="/makineler/yeni">İlk makineyi ekleyin</a>
-  {% endif %}
-</div>
-{% endif %}
 {% endblock %}

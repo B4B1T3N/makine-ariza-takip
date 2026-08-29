@@ -492,6 +492,79 @@ location / {
 
 ---
 
+## Ekipman envanteri
+
+Makine kaydı bir arıza formundan fazlasıdır: tesisin ekipman listesindeki
+künye de burada durur. Alanlar, fabrikanın kendi ekipman listesi
+uygulamasıyla birebir eşleşecek şekilde seçildi.
+
+### Künye alanları
+
+| Grup | Alanlar |
+|---|---|
+| Temel | Bölüm, bina, tip, yeni fabrikadaki konum, fiziki bölüm |
+| Kimlik | Makina kodu, asset kodu, model, tanım, üretici, seri no, unit number |
+| Elektrik ve pnömatik | Voltaj, faz, amper, güç (kW), sigorta, kablo, kaçak akım rölesi, basınç (bar) |
+| Tarihçe | Alım / devreye alma, üretim yılı, imalat tarihi |
+| Organizasyon (ERP) | Business unit / center, actual business / work center, alt acc desc |
+
+Kaynak listede olup burada sütunu olmayan alanlar (VRD bayrakları gibi)
+kaydın `extra` alanında saklanır — künye sayfasında açılır bir başlık altında
+görünür. Amaç, aktarımda hiçbir verinin sessizce düşmemesidir.
+
+**Bölüm ve bina ayrı alanlardır:** `location` bölümdür (PRESHANE, KALIPHANE),
+`building` binadır (Yeni Bina, Paslanmaz). Arıza ekranlarında makinenin yeri
+olarak bölüm gösterilir.
+
+### Liste sayfası
+
+`/makineler` ekipman listesi uygulamasının düzenini izler:
+
+| Bölüm | Ne yapar |
+|---|---|
+| İstatistik şeridi | Kayıt, toplam kurulu güç, bölüm/bina sayısı, konumu atanmamış, açık arızalı |
+| Filtre paneli | Bina, bölüm, tip, yeni konum, üretici — her değerin yanında kayıt sayısı |
+| Çipler | Aktif filtreler; tek tıkla kaldırılır |
+| Görünüm | Tablo (sütun başlıklarından sıralanır) veya kart |
+| Süzgeçler | Yeni konumu boş, elektrik verisi eksik, pasifler dahil |
+
+**Filtre sayıları, o başlığın kendi seçimini hesaba katmaz.** Bina panelinde
+"Yeni Bina" seçiliyken diğer binaların sayıları görünmeye devam eder; aksi
+halde seçilmemiş her değer 0 görünür ve panel işe yaramazdı.
+
+Etkileşimin tamamı **bağlantıdır**: her filtre kombinasyonunun paylaşılabilir
+bir adresi vardır ve sayfa JavaScript olmadan çalışır (Faz 5'teki içerik
+güvenliği politikasıyla da uyumlu).
+
+Bu ekranların görsel dili (koyu plaka başlıklar, uyarı sarısı vurgu,
+tek aralıklı sayılar) bilerek **yalnızca envanter sayfalarına** kapsanmıştır
+(`static/envanter.css`); arıza akışı uygulamanın kendi görünümünde kalır.
+
+### Ekipman listesini içe aktarma
+
+```bat
+:: 1) Ne olacağını gör
+python tools\import_equipment.py --dosya "C:\...\ekipman-listesi.html" --kuru-calistir
+
+:: 2) Aktar
+python tools\import_equipment.py --dosya "C:\...\ekipman-listesi.html"
+
+:: 3) Demo veriyi silip temiz bir envanterle başla (önce yedek alır, onay ister)
+python tools\import_equipment.py --dosya "..." --demo-temizle
+```
+
+Kaynak, ekipman listesi uygulamasının HTML dosyasıdır; içindeki
+`const DATA = [...]` satırı okunur.
+
+| Karar | Neden |
+|---|---|
+| Kimlik `extra.kaynak_id` | Makina kodu ve seri no bu listede benzersiz değil; tekrar çalıştırınca kayıt ikizlenmesin diye kaynak dosyanın kendi `id`'si kullanılır |
+| Tekrarlı seri no aktarılmaz, raporlanır | `serial_no` benzersizliği gerçek bir veri kalitesi kuralıdır; birkaç kirli satır için kısıt gevşetilmez. Ham değer `extra.seri_cakisan` içinde durur |
+| HURDA / FAAL DEĞİL / SATILACAK → pasif | Bu ekipman yeni arıza kaydında listelenmemeli, ama geçmişi korunmalı |
+| `gg.aa.yyyy` tarihleri çevrilir | Kaynakta birkaç tarih bu biçimde; yalnızca yıl yazılmışsa tarih sütununa yazılmaz, `extra` içinde saklanır |
+
+---
+
 ## Roller ve yetkiler
 
 | Yetki | Operatör | Teknisyen | Yönetici |
@@ -527,8 +600,10 @@ notu ekledi, kimi atadı, hangi dosyayı yükledi.
 **Filtreleme:** kayıt no / başlık / açıklama / makine adında arama, makine,
 durum, öncelik, tarih aralığı, "bana atananlar".
 
-**Makine envanteri:** künye, makine bazlı arıza geçmişi, ortalama çözüm süresi.
-Makineler silinmez, pasife alınır; üzerinde açık arıza varsa pasife alınamaz.
+**Makine envanteri:** tesisin ekipman listesindeki tam künye (bina, bölüm,
+makina kodu, model, üretici, elektrik ve ERP alanları), makine bazlı arıza
+geçmişi, ortalama çözüm süresi. Makineler silinmez, pasife alınır; üzerinde
+açık arıza varsa pasife alınamaz. Ayrıntı için **Ekipman envanteri** bölümü.
 
 **Bildirimler:** uygulama içi. Yeni arıza → bakım ekibine; durum/öncelik
 değişikliği ve notlar → kaydı açana ve atanana.
@@ -625,6 +700,7 @@ makine-ariza-takip/
 │   │   ├── templates/          Jinja2 şablonları (Türkçe)
 │   │   └── static/
 │   │       ├── app.css
+│   │       ├── envanter.css    Ekipman listesi görünümü
 │   │       ├── etkilesim.js    Satır tıklaması, onay soruları  ← Faz 5
 │   │       ├── kuyruk.js       IndexedDB çevrimdışı kuyruk
 │   │       └── sw.js           Service worker
@@ -635,11 +711,12 @@ makine-ariza-takip/
 │       ├── helpers.py          UTC ↔ yerel saat dönüşümleri
 │       └── export.py           Excel / CSV
 │
-├── tests/                      181 test
+├── tests/                      213 test
 └── tools/
     ├── seed_demo.py            Demo verisi
     ├── reset_db.py             Sıfırlama (önce yedek alır)
     ├── migrate_attachments.py  Ekleri nesne depolamaya taşır  ← Faz 4
+    ├── import_equipment.py     Ekipman listesini envantere aktarır
     ├── yayin_kontrol.py        Yayın öncesi kurulum kontrolü  ← Faz 5
     └── backup_now.py           Haftalık yedek
 ```
@@ -657,7 +734,7 @@ oldu. `app/web/` altında iş kuralı yoktur — yalnızca HTTP taşıması, otu
 | Tablo | Amaç |
 | --- | --- |
 | `users` | Kullanıcılar, roller, PBKDF2 şifre özeti |
-| `machines` | Makine künyesi, konum, kategori, aktiflik |
+| `machines` | Makine künyesi: bina, bölüm, kod, model, üretici, elektrik ve ERP alanları + `extra` |
 | `faults` | Arıza kayıtları + `client_uuid`, `occurred_at`, `version` |
 | `fault_logs` | Kayıt geçmişi: kim / ne zaman / hangi değişiklik |
 | `attachments` | Yüklenen dosyaların künyesi |
@@ -681,7 +758,7 @@ PBKDF2-HMAC-SHA256 (200.000 tur). Sadece standart kütüphane kullanılır.
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-181 test. Her test izole bir test veritabanı kullanır ve şemayı sıfırdan kurar;
+213 test. Her test izole bir test veritabanı kullanır ve şemayı sıfırdan kurar;
 `TEST_DATABASE_URL` adında "test" geçmiyorsa çalışmayı reddeder — üretim
 veritabanının yanlışlıkla silinmesini önlemek için.
 
@@ -708,6 +785,13 @@ bildirim hedefinin dış adres kabul etmemesi, operatör panelinde tesis
 geneli sayıların ve başkasının kaydının görünmemesi, bozuk/ters tarih
 aralığının sayfayı düşürmemesi, Excel ve CSV indirmelerinin doğru dosyayı
 üretmesi.
+
+Envanterle gelen 32 test: künye alanlarının uçtan uca korunması, çoklu seçim
+filtreleri, boş değer ("—") süzgeci, filtre sayılarının kendi seçimini hariç
+tutması, güce göre sıralama, içe aktarmanın alan eşlemesi (tarih biçimleri,
+anlamsız yılın alınmaması, hurdanın pasif gelmesi), aynı dosyanın ikinci kez
+kayıt çoğaltmaması, tekrarlı seri numarasının çakışma olarak raporlanması ve
+liste/kart/detay sayfalarının doğru içeriği göstermesi.
 
 Faz 4 ile gelen 21 test: iki depolama arka ucunun aynı sözleşmeyi yerine
 getirmesi (S3 sahte bir istemciyle sınanır — amaç boto3'ü değil, anahtarın
@@ -744,5 +828,11 @@ güvenildiğinde bakılması ve kurulum kontrollerinin doğru hata/uyarı
 - **HTTPS'i uygulama sağlamaz.** Sertifika ve yönlendirme, önündeki vekilin
   işidir; `MAT_HTTPS=1` yalnızca uygulamanın davranışını (çerez, HSTS)
   değiştirir.
+- **Ekipman listesindeki bazı kayıtlarda Türkçe karakterler bozuk.** Kaynak
+  dosyada 29 kayıtta "KOORD?NAT", "MAK?NASI" gibi değerler var (büyük
+  olasılıkla ERP dışa aktarımının kod sayfası hatası). İçe aktarma bunları
+  olduğu gibi taşır: "?" yerine hangi harfin geleceği tahmin edilemez, sessiz
+  düzeltme yanlış veri üretirdi. Kaynak listede düzeltip yeniden aktarmak
+  yeterlidir — aktarma aynı kaydın üzerine yazar.
 - **Çevrimdışı koruma yalnızca yeni kayıt girişi içindir.** Listeyi çevrimdışı
   görüntüleme ve durum değiştirme kapsam dışıdır (bkz. yukarıdaki kapsam notu).

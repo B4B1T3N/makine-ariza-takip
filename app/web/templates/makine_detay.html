@@ -1,48 +1,101 @@
 {% extends "taban.html" %}
 {% block baslik %}{{ makine.name }}{% endblock %}
+{% block ek_stil %}<link rel="stylesheet" href="/static/envanter.css">{% endblock %}
+
+{% macro deger(alan) -%}
+  {% set v = makine[alan] %}
+  {% if alan in ('commissioned_at', 'manufacture_date') %}
+    {% if v %}{{ h.fmt_date(v) }}{% else %}<span class="bos">—</span>{% endif %}
+  {% elif alan == 'power_kw' %}
+    {% if v %}{{ "%g" | format(v) }} kW{% else %}<span class="bos">—</span>{% endif %}
+  {% elif v %}{{ v }}{% else %}<span class="bos">—</span>{% endif %}
+{%- endmacro %}
 
 {% block icerik %}
 <div class="sayfa-basi">
   <div>
-    <h1>{{ makine.name }}</h1>
-    <p>
-      {% if makine.is_active %}
-        <span class="rozet" style="background: {{ cfg.STATUS_COLORS[cfg.STATUS_RESOLVED] }}">Aktif</span>
-      {% else %}
-        <span class="rozet rol">Pasif</span>
-      {% endif %}
-      {% if makine.category %}<span class="soluk">{{ makine.category }}</span>{% endif %}
+    <p class="soluk mono">
+      {{ makine.machine_code or "kodsuz" }}{% if makine.asset_no %} · {{ makine.asset_no }}{% endif %}
     </p>
+    <h1>{{ makine.name }}</h1>
   </div>
   <a class="dugme sade" href="/makineler">← Envantere dön</a>
 </div>
 
-<div class="ikili">
-  <section>
-    <div class="kart">
-      <h2>Künye</h2>
-      <dl class="kunye">
-        <dt>Seri no</dt>
-        <dd class="mono">{{ makine.serial_no or "—" }}</dd>
+<div class="env">
+  <div class="env-plaka">
+    <span class="kod">{{ makine.machine_code or "—" }}</span>
+    <h2>{{ makine.name }}</h2>
+    <p class="lbl">
+      {{ makine.location or "bölüm yok" }}
+      {%- if makine.building %} · {{ makine.building }}{% endif %}
+      {%- if makine.category %} · {{ makine.category }}{% endif %}
+    </p>
 
-        <dt>Konum</dt>
-        <dd>{{ makine.location or "—" }}</dd>
-
-        <dt>Kategori</dt>
-        <dd>{{ makine.category or "—" }}</dd>
-
-        <dt>Devreye alma</dt>
-        <dd>{{ h.fmt_date(makine.commissioned_at) }}</dd>
-
-        <dt>Envantere eklenme</dt>
-        <dd>{{ h.fmt_datetime(makine.created_at) }}</dd>
-      </dl>
-
-      {% if makine.notes %}
-        <h3>Notlar</h3>
-        <p class="aciklama">{{ makine.notes }}</p>
-      {% endif %}
+    <div class="satir">
+      <div class="kutu">
+        <span class="lbl">Durum</span>
+        <b>{% if makine.is_active %}AKTİF{% else %}PASİF{% endif %}</b>
+      </div>
+      <div class="kutu">
+        <span class="lbl">Yeni konum</span>
+        <b>{{ makine.new_location or "atanmadı" }}</b>
+      </div>
+      <div class="kutu">
+        <span class="lbl">Güç</span>
+        <b>{% if makine.power_kw %}{{ "%g" | format(makine.power_kw) }} kW{% else %}—{% endif %}</b>
+      </div>
+      <div class="kutu">
+        <span class="lbl">Açık arıza</span>
+        <b>{{ istatistik.open_faults }}</b>
+      </div>
+      <div class="kutu">
+        <span class="lbl">Toplam arıza</span>
+        <b>{{ istatistik.total_faults }}</b>
+      </div>
+      <div class="kutu">
+        <span class="lbl">Ort. çözüm</span>
+        <b>{{ h.humanize_duration(istatistik.avg_resolution_hours) }}</b>
+      </div>
     </div>
+  </div>
+</div>
+
+<div class="ikili">
+  <section class="env">
+    {% for baslik, alanlar in kunye_gruplari %}
+      <div class="kart">
+        <h2>{{ baslik }}</h2>
+        <dl class="env-kunye">
+          {% for alan in alanlar %}
+            <dt>{{ etiketler[alan] }}</dt>
+            <dd>{{ deger(alan) }}</dd>
+          {% endfor %}
+        </dl>
+      </div>
+    {% endfor %}
+
+    {% if makine.notes %}
+      <div class="kart">
+        <h2>Not</h2>
+        <p class="aciklama">{{ makine.notes }}</p>
+      </div>
+    {% endif %}
+
+    {% if makine.extra %}
+      <details class="kart">
+        <summary><h2>Kaynak listeden gelen diğer alanlar</h2></summary>
+        <dl class="env-kunye">
+          {% for anahtar, v in makine.extra.items() %}
+            <dt>{{ anahtar }}</dt><dd class="tek">{{ v }}</dd>
+          {% endfor %}
+        </dl>
+        <p class="lbl">
+          Bu alanların envanterde ayrı sütunu yok; ekipman listesinden
+          aktarılırken kaybolmasın diye kaydın içinde saklanıyor.
+        </p>
+      </details>
+    {% endif %}
 
     <div class="kart">
       <div class="sayfa-basi">
@@ -55,11 +108,7 @@
         <table class="tablo">
           <thead>
             <tr>
-              <th>No</th>
-              <th>Başlık</th>
-              <th>Durum</th>
-              <th>Öncelik</th>
-              <th>Arıza zamanı</th>
+              <th>No</th><th>Başlık</th><th>Durum</th><th>Öncelik</th><th>Arıza zamanı</th>
             </tr>
           </thead>
           <tbody>
@@ -89,23 +138,18 @@
     </div>
   </section>
 
-  <!-- Sağ sütun: özet ve yönetim işlemleri -->
   <aside>
     <div class="kart">
       <h2>Özet</h2>
       <dl class="kunye">
-        <dt>Toplam arıza</dt>
-        <dd class="mono">{{ istatistik.total_faults }}</dd>
-
-        <dt>Açık arıza</dt>
-        <dd class="mono">{{ istatistik.open_faults }}</dd>
-
-        <dt>Ortalama çözüm</dt>
-        <dd>{{ h.humanize_duration(istatistik.avg_resolution_hours) }}</dd>
-
+        <dt>Envantere eklenme</dt>
+        <dd>{{ h.fmt_datetime(makine.created_at) }}</dd>
         <dt>Son arıza</dt>
         <dd>{{ h.fmt_datetime(istatistik.last_fault_at) }}</dd>
+        <dt>Ortalama çözüm</dt>
+        <dd>{{ h.humanize_duration(istatistik.avg_resolution_hours) }}</dd>
       </dl>
+      <a class="dugme" href="/arizalar/yeni">Yeni arıza kaydı</a>
     </div>
 
     {% if yonetebilir %}

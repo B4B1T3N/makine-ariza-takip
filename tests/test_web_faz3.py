@@ -76,15 +76,17 @@ def test_yonetici_makine_ekler(istemci, users):
     giris_yap(istemci, "admin", "admin")
     token = _csrf(istemci.get("/makineler/yeni").text)
 
+    # Form alanları sütun adlarıyla aynıdır (envanter genişlemesiyle birlikte
+    # 30 alan için ikinci bir eşleme tablosu tutmamak için).
     yanit = istemci.post(
         "/makineler/yeni",
         data={
-            "ad": "Kaynak Robotu",
-            "seri_no": "SN-99",
-            "konum": "Hat C",
-            "kategori": "Robot",
-            "devreye_alma": "2024-05-01",
-            "notlar": "Haftalık yağlama",
+            "name": "Kaynak Robotu",
+            "serial_no": "SN-99",
+            "location": "Hat C",
+            "category": "Robot",
+            "commissioned_at": "2024-05-01",
+            "notes": "Haftalık yağlama",
             "csrf": token,
         },
         follow_redirects=False,
@@ -102,7 +104,7 @@ def test_ayni_seri_no_ikinci_kez_kabul_edilmez(istemci, users, machines):
 
     yanit = istemci.post(
         "/makineler/yeni",
-        data={"ad": "Kopya", "seri_no": "SN-1", "csrf": token},
+        data={"name": "Kopya", "serial_no": "SN-1", "csrf": token},
     )
     assert yanit.status_code == 400
     assert "zaten kayıtlı" in yanit.text

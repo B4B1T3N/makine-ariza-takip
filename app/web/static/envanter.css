@@ -1,0 +1,238 @@
+/* Envanter ekranları — atölye/ekipman listesi görünümü.
+ *
+ * Tesisin ekipman listesi uygulamasının dilini izler: koyu "plaka" başlıklar,
+ * uyarı sarısı vurgu, büyük harfli küçük etiketler, sayılar için tek aralıklı
+ * yazı tipi. Bu dil bilerek **yalnızca envanter sayfalarına** kapsanmıştır
+ * (`.env` sarmalı); arıza akışı uygulamanın kendi görünümünde kalır.
+ *
+ * Sayfa sunucuda üretilir: filtre, sıralama ve görünüm değişimi bağlantıdır.
+ * Böylece her durum paylaşılabilir bir adrese sahiptir ve satır içi betik
+ * gerektirmez (Faz 5'teki içerik güvenliği politikasıyla uyumlu).
+ */
+
+.env {
+  --zinc: #e4e6e1;
+  --yuzey: #f8f8f5;
+  --yuzey2: #eff0eb;
+  --murekkep: #16181a;
+  --sessiz: #6e736c;
+  --hat: #c9ccc3;
+  --hat2: #dee0d9;
+  --tehlike: #f2c300;
+  --plaka: #22262b;
+  --plaka2: #2c3037;
+  --yesil: #1e6b47;
+  --pas: #a8391f;
+  --celik: #3e6b8a;
+  --tek-aralik: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+
+  color: var(--murekkep);
+  background: var(--zinc);
+  font-size: 14px;
+  line-height: 1.45;
+  /* Sayfa gövdesinin iç boşluğunu iptal eder: envanter kenardan kenara. */
+  margin: -1.6rem -1.5rem -3rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .env {
+    --zinc: #1a1c1e;
+    --yuzey: #212427;
+    --yuzey2: #191b1e;
+    --murekkep: #e7e9e4;
+    --sessiz: #9aa09a;
+    --hat: #3a3e42;
+    --hat2: #2c3033;
+  }
+}
+
+.env .lbl {
+  font-size: 10px; font-weight: 800; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--sessiz);
+}
+.env .tek { font-family: var(--tek-aralik); font-variant-numeric: tabular-nums; }
+.env a { color: inherit; }
+
+/* --- Üst şerit ---------------------------------------------------------- */
+.env-ray {
+  background: var(--plaka); color: #edefea; border-bottom: 3px solid var(--tehlike);
+  display: flex; align-items: center; gap: 14px; padding: 12px 16px; flex-wrap: wrap;
+}
+.env-ray .marka { display: flex; align-items: center; gap: 10px; }
+.env-ray .isaret {
+  width: 30px; height: 30px; border-radius: 3px; background: var(--tehlike);
+  display: grid; place-items: center; color: #1a1c1f; font-weight: 900;
+  font-size: 13px; font-family: var(--tek-aralik);
+}
+.env-ray h1 {
+  margin: 0; font-size: 14px; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: #edefea;
+}
+.env-ray .alt { margin: 0; font-size: 10px; letter-spacing: .16em;
+  text-transform: uppercase; color: #98a0a8; }
+
+.env-ara { flex: 1 1 240px; min-width: 180px; display: flex; gap: 6px; }
+.env-ara input {
+  flex: 1; padding: 9px 12px; border-radius: 3px; border: 1px solid #3c424a;
+  background: #191c20; color: #edefea; font-size: 13px; font-family: var(--tek-aralik);
+}
+.env-ara input::placeholder { color: #6e767e; }
+.env-dugme {
+  background: #31363d; color: #edefea; border: 1px solid #434a52; border-radius: 3px;
+  padding: 8px 12px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; text-decoration: none; display: inline-block;
+}
+.env-dugme:hover { background: #3c424a; text-decoration: none; }
+.env-dugme.sari { background: var(--tehlike); color: #1a1c1f; border-color: #c9a200; }
+.env-dugme.sari:hover { background: #ffcb1f; }
+
+/* --- İstatistik şeridi --------------------------------------------------- */
+.env-sayilar {
+  display: flex; flex-wrap: wrap; background: var(--yuzey);
+  border-bottom: 1px solid var(--hat);
+}
+.env-sayilar div {
+  padding: 12px 18px; border-right: 1px solid var(--hat2); flex: 1 1 auto; min-width: 130px;
+}
+.env-sayilar b {
+  display: block; font-family: var(--tek-aralik); font-size: 22px;
+  font-weight: 700; letter-spacing: -.02em;
+}
+.env-sayilar .uyari b { color: #8a6b00; }
+
+/* --- Yerleşim ------------------------------------------------------------ */
+.env-govde { display: grid; grid-template-columns: 250px minmax(0, 1fr); align-items: start; }
+@media (max-width: 900px) { .env-govde { grid-template-columns: 1fr; } }
+
+.env-filtre {
+  background: var(--yuzey2); border-right: 1px solid var(--hat);
+  padding: 14px 12px 40px; align-self: stretch;
+}
+.env-filtre .grup { margin-bottom: 18px; }
+.env-filtre .grup > .baslik {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-bottom: 6px; border-bottom: 1px solid var(--hat); margin-bottom: 8px;
+}
+.env-filtre .temizle { color: var(--pas); font-size: 9px; font-weight: 800; letter-spacing: .1em; }
+.env-secenek {
+  display: flex; align-items: center; gap: 7px; padding: 4px;
+  border-radius: 2px; text-decoration: none;
+}
+.env-secenek:hover { background: #e4e6df; text-decoration: none; }
+@media (prefers-color-scheme: dark) { .env-secenek:hover { background: #2a2e31; } }
+.env-secenek .kutu {
+  width: 13px; height: 13px; flex: none; border: 1px solid var(--sessiz);
+  border-radius: 2px; display: grid; place-items: center; font-size: 10px; line-height: 1;
+}
+.env-secenek.acik .kutu { background: var(--plaka); border-color: var(--plaka); color: var(--tehlike); }
+.env-secenek .ad { flex: 1; font-size: 12px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.env-secenek.acik .ad { font-weight: 700; }
+.env-secenek .adet { font-family: var(--tek-aralik); font-size: 10px; color: var(--sessiz); }
+
+/* --- Araç çubuğu --------------------------------------------------------- */
+.env-arac {
+  display: flex; gap: 8px; align-items: center; padding: 10px 16px; flex-wrap: wrap;
+  background: var(--yuzey); border-bottom: 1px solid var(--hat);
+}
+.env-arac select {
+  font-family: var(--tek-aralik); font-size: 11px; padding: 6px 8px;
+  border: 1px solid var(--hat); border-radius: 3px; background: var(--yuzey);
+  color: var(--murekkep); width: auto;
+}
+.env-secim { display: flex; border: 1px solid var(--hat); border-radius: 3px; overflow: hidden; }
+.env-secim a {
+  padding: 6px 11px; font-size: 10px; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--sessiz); background: var(--yuzey);
+  text-decoration: none;
+}
+.env-secim a.acik { background: var(--plaka); color: #fff; }
+.env-hap {
+  border: 1px solid var(--hat); border-radius: 99px; padding: 5px 10px;
+  font-size: 11px; font-weight: 600; text-decoration: none; background: var(--yuzey);
+}
+.env-hap:hover { text-decoration: none; }
+.env-hap.acik { background: var(--tehlike); border-color: #c9a200; color: #1a1c1f; }
+.env-bosluk { flex: 1; }
+
+.env-cipler {
+  display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 16px;
+  background: var(--yuzey2); border-bottom: 1px solid var(--hat);
+}
+.env-cip {
+  display: inline-flex; align-items: center; gap: 6px; background: var(--yuzey);
+  border: 1px solid var(--hat); border-radius: 2px; padding: 3px 8px; font-size: 11px;
+  text-decoration: none;
+}
+.env-cip:hover { text-decoration: none; border-color: var(--pas); }
+.env-cip .kapat { color: var(--pas); font-weight: 800; }
+
+/* --- Tablo --------------------------------------------------------------- */
+.env-tablo-sarmal { overflow: auto; background: var(--yuzey); max-height: calc(100vh - 120px); }
+.env-tablo { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.env-tablo thead th {
+  position: sticky; top: 0; z-index: 5; background: var(--yuzey2); text-align: left;
+  padding: 9px 10px; border-bottom: 2px solid var(--plaka); white-space: nowrap;
+  font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: #4a4f49;
+}
+@media (prefers-color-scheme: dark) { .env-tablo thead th { color: #b7bdb6; } }
+.env-tablo thead th a { text-decoration: none; }
+.env-tablo tbody td { padding: 8px 10px; border-bottom: 1px solid var(--hat2); vertical-align: top; }
+.env-tablo tbody tr { cursor: pointer; }
+.env-tablo tbody tr:hover { background: #f0f1ea; }
+@media (prefers-color-scheme: dark) { .env-tablo tbody tr:hover { background: #26292c; } }
+.env-tablo tbody tr.pasif td { opacity: .55; }
+.env-tablo .sira { font-family: var(--tek-aralik); font-size: 11px; color: var(--sessiz); }
+.env-tablo .ad { font-weight: 600; }
+.env-tablo .alt { font-size: 11px; color: var(--sessiz); margin-top: 1px; }
+
+.env-etiket {
+  display: inline-block; font-family: var(--tek-aralik); font-size: 10px;
+  letter-spacing: .04em; border: 1px solid var(--hat); border-radius: 2px;
+  padding: 1px 5px; background: var(--yuzey); white-space: nowrap;
+}
+.env-etiket.yeni { background: var(--tehlike); border-color: #c9a200; color: #1a1c1f; }
+.env-etiket.tasindi { background: #e1f0e7; border-color: #a9cdb8; color: var(--yesil); }
+.env-etiket.hurda { background: #f6e2dd; border-color: #ddb2a6; color: var(--pas); }
+.env-etiket.atanmadi { opacity: .5; }
+.env-etiket.ariza { background: #f6e2dd; border-color: #ddb2a6; color: var(--pas); font-weight: 700; }
+
+/* --- Kart görünümü ------------------------------------------------------- */
+.env-kartlar {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px; padding: 14px 16px;
+}
+.env-kart {
+  background: var(--yuzey); border: 1px solid var(--hat); border-radius: 3px;
+  padding: 11px 12px; border-left: 3px solid var(--plaka); text-decoration: none;
+  display: block;
+}
+.env-kart:hover { border-left-color: var(--tehlike); text-decoration: none; }
+.env-kart.pasif { opacity: .6; border-left-color: var(--pas); }
+.env-kart h4 { margin: 0 0 3px; font-size: 13px; font-weight: 700; }
+.env-kart .satir {
+  display: flex; justify-content: space-between; gap: 8px; margin-top: 8px;
+  font-size: 11px; color: var(--sessiz);
+}
+
+.env-bos { padding: 60px 20px; text-align: center; color: var(--sessiz); }
+.env-bos b { display: block; font-size: 15px; color: var(--murekkep); margin-bottom: 6px; }
+
+/* --- Künye plakası (detay sayfası) --------------------------------------- */
+.env-plaka {
+  background: linear-gradient(160deg, var(--plaka2), var(--plaka));
+  border-radius: 4px; padding: 16px 18px; color: #dfe3e6; position: relative;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 2px 6px rgba(0, 0, 0, .2);
+  margin-bottom: 1.2rem;
+}
+.env-plaka h2 { color: #fff; margin: 0 0 .2rem; font-size: 1.15rem; }
+.env-plaka .kod { font-family: var(--tek-aralik); color: var(--tehlike); font-size: 12px; }
+.env-plaka .satir { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: .8rem; }
+.env-plaka .kutu .lbl { color: #98a0a8; }
+.env-plaka .kutu b { display: block; font-family: var(--tek-aralik); font-size: 15px; }
+
+.env-kunye { display: grid; grid-template-columns: 13rem 1fr; gap: .4rem 1rem; margin: 0; }
+.env-kunye dt { color: var(--sessiz); font-size: .85rem; }
+.env-kunye dd { margin: 0; }
+.env-kunye dd.bos { color: var(--sessiz); }

@@ -6,6 +6,7 @@
   <title>{% block baslik %}{{ cfg.APP_NAME }}{% endblock %} — {{ cfg.APP_NAME }}</title>
   <meta name="csrf-token" content="{{ csrf }}">
   <link rel="stylesheet" href="/static/app.css">
+  {% block ek_stil %}{% endblock %}
 </head>
 <body>
 

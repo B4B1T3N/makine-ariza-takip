@@ -38,6 +38,51 @@ CREATE INDEX IF NOT EXISTS idx_machines_active   ON machines(is_active);
 CREATE INDEX IF NOT EXISTS idx_machines_category ON machines(category);
 
 
+-- Envanter alanları. Tesisin ekipman listesindeki künye bilgileri; makine
+-- kaydı bir arıza formundan fazlasıdır, elektrik ve ERP künyesi de burada
+-- durur. Mevcut kurulumların da alması için ALTER ile eklenir: şema dosyası
+-- her açılışta çalıştırılır ve `IF NOT EXISTS` sayesinde idempotenttir.
+--
+-- `location` = bölüm (PRESHANE, KALIPHANE...), `building` = bina.
+-- `serial_no` benzersizliği bilerek korunur: gerçek listede birkaç tekrar
+-- vardır ve bunlar veri hatasıdır — içe aktarma onları çakışma olarak
+-- raporlar, kısıt gevşetilmez.
+ALTER TABLE machines
+    ADD COLUMN IF NOT EXISTS building         TEXT,
+    ADD COLUMN IF NOT EXISTS new_location     TEXT,
+    ADD COLUMN IF NOT EXISTS machine_code     TEXT,
+    ADD COLUMN IF NOT EXISTS asset_no         TEXT,
+    ADD COLUMN IF NOT EXISTS model            TEXT,
+    ADD COLUMN IF NOT EXISTS definition       TEXT,
+    ADD COLUMN IF NOT EXISTS manufacturer     TEXT,
+    ADD COLUMN IF NOT EXISTS physical_area    TEXT,
+    ADD COLUMN IF NOT EXISTS sub_account      TEXT,
+    ADD COLUMN IF NOT EXISTS unit_no          TEXT,
+    ADD COLUMN IF NOT EXISTS bu_code          TEXT,
+    ADD COLUMN IF NOT EXISTS bu_name          TEXT,
+    ADD COLUMN IF NOT EXISTS awc_code         TEXT,
+    ADD COLUMN IF NOT EXISTS awc_name         TEXT,
+    ADD COLUMN IF NOT EXISTS production_year  INTEGER,
+    ADD COLUMN IF NOT EXISTS manufacture_date DATE,
+    ADD COLUMN IF NOT EXISTS power_kw         NUMERIC(10, 2),
+    ADD COLUMN IF NOT EXISTS voltage          TEXT,
+    ADD COLUMN IF NOT EXISTS phase            TEXT,
+    ADD COLUMN IF NOT EXISTS amperage         TEXT,
+    ADD COLUMN IF NOT EXISTS fuse             TEXT,
+    ADD COLUMN IF NOT EXISTS cable            TEXT,
+    ADD COLUMN IF NOT EXISTS leakage_relay    TEXT,
+    ADD COLUMN IF NOT EXISTS pressure_bar     TEXT,
+    -- Kaynak listede olup burada sütunu olmayan alanlar (VRD bayrakları
+    -- gibi) kaybolmasın diye: içe aktarma bunları buraya yazar.
+    ADD COLUMN IF NOT EXISTS extra            JSONB;
+
+CREATE INDEX IF NOT EXISTS idx_machines_building   ON machines(building);
+CREATE INDEX IF NOT EXISTS idx_machines_location   ON machines(location);
+CREATE INDEX IF NOT EXISTS idx_machines_code       ON machines(machine_code);
+CREATE INDEX IF NOT EXISTS idx_machines_newloc     ON machines(new_location);
+CREATE INDEX IF NOT EXISTS idx_machines_maker      ON machines(manufacturer);
+
+
 CREATE TABLE IF NOT EXISTS faults (
     id          BIGINT      GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
 
